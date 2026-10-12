@@ -212,6 +212,7 @@ The only real risk to a keyboard is firmware. Everything here is meant to make t
   1. **The guard.** App code sends only through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex. A refused frame shows as a `BLOCK` line in the log.
   2. **The transport.** `src/transports/webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else. It also only routes a report to an interface that declares it.
   3. **The build.** A raw WebHID call anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, breaks the build. The module fails to load in `npm run dev`, and `npm run build` and `npm run lint` fail (`scripts/raw-sends.mjs`).
+- **The bootloader door stays shut.** AULA's firmware updater, decompiled, restarts a board into its bootloader with `05 75 00 00 00 00` on feature report `0x05`, then erases, writes and burns over reports `0x05` and `0x06` as device `0603:1020`. The allowlist refuses report `0x05` and any `0x06` frame that isn't 520 bytes with an allowed command, and the device checks refuse any ID but `258A:010C`. The safety test sends those exact frames and checks they're refused.
 - **Identity gate.** Until the board identifies as an F75, the identity read is the only command sent. If the product ID isn't the wired F75's, nothing at all is sent. A board that reappears with a different product ID may be in its bootloader: send nothing, unplug, wait, replug.
 - **Dry run is on at every page load.** It blocks writes but lets reads through.
 - **Read before write.** Back up first. Every change is read-modify-write from the board's own bytes, and every write is read back.
@@ -419,6 +420,7 @@ The comments in `src/protocol/` tag each fact with its source:
 | `[CAP]`, `[F87-CAP]` | OEM-app captures of an F87 in `references/Aula-F87-Controller/captures/` |
 | `[RS]` | [RustamSheoran/aula-f75](https://github.com/RustamSheoran/aula-f75): `0x8a`/`0x0a` is a 512-byte colour table |
 | `[OWNER]` | a backup of the owner's F75 taken with this app (`test/fixtures/f75.ts`) |
+| `[UPD]` | AULA's firmware updater, `references/AulaSofwareLinux/assets/devices/f87-pro-wired-wired/Update.exe`, decompiled with Ghidra 12.1.4 through [REA](https://github.com/morluto/rea). Never run. |
 
 The submodules in `references/`:
 

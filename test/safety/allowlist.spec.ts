@@ -29,7 +29,11 @@ test('the WebHID transport refuses packets off the allowlist, even with the guar
       ['unknown command', 'feature', 0x06, frame(0x7f, 0, 0)],
       ['settings page without its end marker', 'feature', 0x06, frame(0x04, 0, 128)],
       ['dongle frame', 'output', 0x13, new Uint8Array(19)],
-      ['other feature report', 'feature', 0x05, new Uint8Array(5)],
+      // AULA's firmware updater (Update.exe, decompiled): report 0x05 is the bootloader's door.
+      ['enter bootloader', 'feature', 0x05, Uint8Array.from([0x75, 0, 0, 0, 0])],
+      ['bootloader erase', 'feature', 0x05, new Uint8Array(5).fill(0x45)],
+      ['bootloader burn', 'feature', 0x05, new Uint8Array(5).fill(0x55)],
+      ['bootloader data block', 'feature', 0x06, Uint8Array.from({ length: 2049 }, (_, i) => (i === 0 ? 0x77 : 0))],
     ]
     const outcome: Record<string, string> = {}
     for (const [name, type, reportId, data] of attempts) {

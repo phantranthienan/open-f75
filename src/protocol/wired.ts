@@ -24,6 +24,9 @@
  *   [CAP]  references/Aula-F87-Controller/captures/windows-npcap-wireshark/raining-silk.pcapng:
  *          the OEM app's wired 0x08 frames carry `01 00 7a 01` = 1 package,
  *          index 0, length 378 (126 LEDs x 3)
+ *   [UPD]  AULA's firmware updater, references/AulaSofwareLinux/assets/devices/
+ *          f87-pro-wired-wired/Update.exe (SHA-256 95366eda...29843), decompiled
+ *          with Ghidra 12.1.4 through REA; never run
  */
 import { toHex } from '@/protocol/bytes'
 
@@ -48,6 +51,14 @@ export const Cmd = {
  * Known but deliberately unused, so the guard refuses them [ASL]:
  * 0x03/0x83 key matrix, 0x05/0x85 macros, 0x06/0x86 game mode, 0x08 direct
  * LEDs (Phase 5), 0x0b screen, 0x11 factory reset, 0x87 battery.
+ *
+ * Firmware updates never use this channel [UPD]. The updater sends
+ * `05 75 00 00 00 00` ('u') on feature report 0x05 to the running board to
+ * restart it into its bootloader, which enumerates as 0603:1020. There it
+ * erases ('E'), writes ('W'), reads back ('R') and burns ('U') over report
+ * 0x05, with 2050-byte data reports on 0x06. The allowlist only passes report
+ * 0x06 with 519 data bytes, and device-check.ts sends nothing to any ID but
+ * 258A:010C, so none of that can be sent.
  */
 
 /** GET_INFO parameter that returns the 6-byte model identity [ASL]. */
