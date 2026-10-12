@@ -6,7 +6,7 @@ import { Switch } from '@/ui/components/ui/switch'
 import type { Session } from '@/ui/hooks/use-session'
 
 export function AppHeader({ session }: { session: Session }) {
-  const { connected, busy, dryRun, kind } = session
+  const { connected, busy, dryRun } = session
 
   return (
     <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b px-4 py-3 sm:px-6">
@@ -22,16 +22,6 @@ export function AppHeader({ session }: { session: Session }) {
 
       <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-2">
         <div className="flex items-center gap-2">
-          <Switch
-            id="mock"
-            checked={kind === 'mock'}
-            disabled={connected}
-            onCheckedChange={(on) => session.setKind(on ? 'mock' : 'webhid')}
-          />
-          <Label htmlFor="mock">Mock keyboard</Label>
-        </div>
-
-        <div className="flex items-center gap-2">
           <Switch id="dry-run" checked={dryRun} disabled={busy} onCheckedChange={session.setDryRun} />
           <Label htmlFor="dry-run">Dry run</Label>
         </div>
@@ -46,11 +36,7 @@ export function AppHeader({ session }: { session: Session }) {
             Disconnect
           </Button>
         ) : (
-          <Button
-            size="sm"
-            disabled={kind === 'webhid' && !session.webHidSupported}
-            onClick={() => void session.connect()}
-          >
+          <Button size="sm" disabled={!session.webHidSupported} onClick={() => void session.connect()}>
             <Plug />
             Connect
           </Button>

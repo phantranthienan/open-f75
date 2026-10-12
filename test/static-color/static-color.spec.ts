@@ -25,7 +25,7 @@ test.describe('static colour over WebHID', () => {
     await sendColor(page) // dry run is on at every page load
 
     await expect(page.getByText(/^Dry run \(firmware colour/)).toBeVisible()
-    await expect(page.getByRole('log')).toContainText('settings 0x3b: 0x40 -> 0x41')
+    await expect(page.getByRole('log')).toContainText('settings 0x3b: 0x46 -> 0x41')
     expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
     expect(await boardState(page)).toEqual({ settings: BOARD.settings, colorTable: BOARD.colorTable })
   })
@@ -42,7 +42,7 @@ test.describe('static colour over WebHID', () => {
 
     const write = (await sent(page)).find((r) => r.data[0] === SETTINGS_WRITE)!
     const written = payloadOf(write.data, 128)
-    // 0x3b is the byte Fn+Tab moved on a real F75 (AulaSofwareLinux); 0x41 = green
+    // 0x3b is the byte Fn+Tab moved on a real F75 (AulaSofwareLinux): speed 4, colour 1 = green
     expect(changedOffsets(BOARD.settings, written)).toEqual([0x3b])
     expect(written[0x3b]).toBe(0x41)
     expect(write.data.slice(7 + 128).every((b) => b === 0)).toBe(true)
@@ -67,13 +67,14 @@ test.describe('static colour over WebHID', () => {
   })
 
   test('nothing is written when the board already shows the colour', async ({ page }) => {
-    await openWithBoard(page) // the real F75 dump is on Fixed on, red
+    // The owner's board shows white as colour 6, and slot 0 holds white too.
+    await openWithBoard(page)
     await connectF75(page)
     await setDryRun(page, false)
-    await pickColor(page, '#ff0000')
+    await pickColor(page, '#ffffff')
     await sendColor(page)
 
-    await expect(page.getByText('The board already shows #ff0000 on Fixed on. Nothing was written.')).toBeVisible()
+    await expect(page.getByText('The board already shows #ffffff on Fixed on. Nothing was written.')).toBeVisible()
     expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
   })
 
@@ -84,7 +85,7 @@ test.describe('static colour over WebHID', () => {
     await pickColor(page, '#00ff00')
     await sendColor(page)
 
-    await expect(page.getByText('Stopped: The board did not keep the write: settings 0x3b reads 0x40')).toBeVisible()
+    await expect(page.getByText('Stopped: The board did not keep the write: settings 0x3b reads 0x46')).toBeVisible()
   })
 
   test('refuses a custom colour when the colour table has another layout', async ({ page }) => {

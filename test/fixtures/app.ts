@@ -1,5 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test'
-import { F75_SETTINGS, F87_COLOR_TABLE } from '@/transports/mock-data'
+import { F75_COLOR_TABLE, F75_IDENTITY, F75_SETTINGS } from '@test/fixtures/f75'
 import { installFakeHid, type FakeBoard, type SentReport } from '@test/fixtures/fake-hid'
 
 /** Every test fails if the page logs an error or throws. */
@@ -19,14 +19,13 @@ export const test = base.extend<{ consoleErrors: string[] }>({
 })
 export { expect }
 
-export const F75_IDENTITY = [0x03, 0x00, 0x00, 0x00, 0x00, 0xcd]
 export const F87_IDENTITY = [0x03, 0x00, 0x00, 0x00, 0x00, 0x8f]
 
-/** The real F75 settings dump (Fixed on, red) and the F87-derived colour table. */
+/** The owner's F75 as backed up: Fixed on, white (colour 6), brightness 7. */
 export const BOARD: FakeBoard = {
   identity: F75_IDENTITY,
-  settings: [...F75_SETTINGS],
-  colorTable: [...F87_COLOR_TABLE],
+  settings: F75_SETTINGS,
+  colorTable: F75_COLOR_TABLE,
   productId: 0x010c,
   granted: false,
   replyFormat: 'short-with-id', // what Chrome on macOS did with the real F75

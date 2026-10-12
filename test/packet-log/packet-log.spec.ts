@@ -43,6 +43,6 @@ test.describe('packet log', () => {
     await openWithBoard(page)
     await connectF75(page)
     await page.getByRole('button', { name: 'Clear log' }).click()
-    await expect(page.getByRole('log')).toHaveText('Nothing yet. Connect a board or switch on the mock.')
+    await expect(page.getByRole('log')).toHaveText('Nothing yet. Connect the board to start.')
   })
 })

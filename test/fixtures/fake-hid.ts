@@ -39,6 +39,8 @@ export interface FakeHidHandle {
   sent: SentReport[]
   state(): { settings: number[]; colorTable: number[] }
   unplug(): void
+  /** Fires navigator.hid's "connect" event for the board, as Chrome does on plug-in. */
+  announce(): void
 }
 
 declare global {
@@ -145,6 +147,9 @@ export function installFakeHid(board: FakeBoard): void {
     unplug: () => {
       device.opened = false
       hid.dispatchEvent(Object.assign(new Event('disconnect'), { device }))
+    },
+    announce: () => {
+      hid.dispatchEvent(Object.assign(new Event('connect'), { device }))
     },
   }
 }

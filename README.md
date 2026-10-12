@@ -2,7 +2,7 @@
 
 A lighting controller for the AULA F75 keyboard, built as a WebHID web app (Vite, React, TypeScript, shadcn/ui). A Tauri menu-bar app comes later and will reuse this UI.
 
-**Status:** the app runs end to end against a mock board built from real F75 data: its HID descriptor and a settings dump read off an F75. The wired protocol and the firmware-colour path come from [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), which was verified on an F75. Nobody has run this app on an F75 yet, so dry run is on by default.
+**Status:** connects to a real F75 over the cable in Chrome on macOS, identifies it, backs it up and sets a static colour. The wired protocol and the firmware-colour path come from [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), which was verified on an F75; the custom-colour path matches the colour table read off the owner's F75. Dry run is on by default.
 
 ## Run it
 
@@ -14,7 +14,7 @@ npm run build      # typecheck + production build into dist/
 npm run lint       # oxlint + the raw-send rule
 ```
 
-WebHID only works in Chromium browsers, on `https` or `localhost`. In other browsers, or without the keyboard, switch on **Mock keyboard**.
+WebHID only works in Chromium browsers, on `https` or `localhost`.
 
 ## First session with the real board
 
@@ -59,7 +59,6 @@ src/
     dongle.ts         0x13 20-byte framing (2.4 GHz dongle); never sent, the allowlist refuses it
     ids.ts            USB IDs and model identities
     bytes.ts          hex and colour helpers
-  hid-descriptor.ts   HID report descriptor parser (mock today, hidapi later)
   transport.ts        Transport interface: send, receiveFeature, onInput, onDisconnect
   allowlist.ts        the five commands that may reach the board
   safe-send.ts        the guard: allowlist, dry run, hex log; the only caller of Transport.send
@@ -68,8 +67,6 @@ src/
   log.ts              packet log store
   transports/
     webhid.ts         Chrome/Edge; the only file that touches navigator.hid
-    mock.ts           fake board speaking the wired protocol
-    mock-data.ts      the real F75 descriptor and settings dump it starts from
   ui/                 React app; components/ui holds the shadcn components
 test/                 end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs the rule that only the guard may send, used by the build and lint
@@ -81,7 +78,7 @@ references/           reference repos as git submodules
 - Only five commands can reach the board: identity read, settings read and write, colour table read and write (`src/allowlist.ts`). Each header field must match, padding must be zero, and writes must carry their `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, the dongle's `0x13` reports and anything unknown are refused.
 - That rule is enforced three times:
   1. **The guard.** All app code sends through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex.
-  2. **The transports.** `webhid.ts` and the mock check the allowlist again right before the hardware call, so code that skips the guard still can't send anything else.
+  2. **The transport.** `webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else.
   3. **The build.** Raw WebHID calls anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, make the module fail to load in `npm run dev`, fail `npm run build` and fail `npm run lint` (`scripts/raw-sends.mjs`).
 - Until the board identifies as an F75, the identity read is the only command sent. The USB IDs `258A:010C` are shared by the F87, F99, H108 and boards from other brands, and OpenRGB disabled some Sinowealth keyboard detectors after reused IDs bricked Redragon boards.
 - Dry run is on at every page load. It blocks writes but lets reads through, so the logged changes are computed from your board's real data.
@@ -111,17 +108,17 @@ npx shadcn@latest add dialog
 
 ## Tests
 
-End-to-end only: Playwright drives the real app in Chromium. Most tests install a fake F75 as `navigator.hid`, so they go through the real WebHID transport and check the exact bytes that reach the board.
+End-to-end only: Playwright drives the real app in Chromium with a fake F75 installed as `navigator.hid`, so every test goes through the real WebHID transport and checks the exact bytes that reach the board. Test doubles live only in `test/`; `src/` is the app.
 
 ```
 test/
-  fixtures/      app.ts (helpers, fails a test on any console error), fake-hid.ts (the fake F75)
+  fixtures/      app.ts (helpers, fails a test on any console error), fake-hid.ts (the fake F75),
+                 f75.ts (identity, settings page and colour table from the owner's F75)
   connect/       identity read, other models and product IDs, reconnect, unplug, no WebHID
   safety/        the transport refuses everything off the allowlist, even with the guard bypassed
   static-color/  dry run, firmware colour (one byte), custom colour, no-op, ignored writes
   backup/        the downloaded JSON, reads only
   packet-log/    following new entries, clearing, the newer-Chrome scroll regression
-  mock/          the built-in mock keyboard
 ```
 
 First run: `npx playwright install chromium`, then `npm test`. `npm run test:ui` opens Playwright's UI.

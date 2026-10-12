@@ -79,7 +79,7 @@ export function PacketLog({ session }: { session: Session }) {
           className="h-80 overflow-y-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed lg:h-full"
         >
           {entries.length === 0 ? (
-            <p className="text-muted-foreground">Nothing yet. Connect a board or switch on the mock.</p>
+            <p className="text-muted-foreground">Nothing yet. Connect the board to start.</p>
           ) : (
             entries.map((e) => (
               <div key={e.id} className="grid grid-cols-[auto_3rem_minmax(0,1fr)] gap-x-2 py-0.5">

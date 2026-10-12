@@ -102,16 +102,6 @@ export function ColorCard({ session }: { session: Session }) {
             : 'Custom colour: also writes the colour table. Not yet confirmed on an F75, and only done if your board\'s table has the expected layout.'}
         </p>
 
-        {session.mockBoard && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {session.mockBoard.color && (
-              <span className="size-4 rounded-sm border" style={{ backgroundColor: formatHexColor(session.mockBoard.color) }} />
-            )}
-            Mock board: effect {session.mockBoard.effect}
-            {session.mockBoard.color ? `, ${formatHexColor(session.mockBoard.color)}` : ''}
-          </div>
-        )}
-
         {status && <p className="text-sm">{status}</p>}
       </CardContent>
 

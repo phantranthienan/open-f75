@@ -16,12 +16,12 @@ export default function App() {
 
       <main className="mx-auto grid max-w-7xl gap-4 p-4 sm:p-6 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
-          {session.kind === 'webhid' && !session.webHidSupported && (
+          {!session.webHidSupported && (
             <Alert>
               <TriangleAlert />
               <AlertTitle>WebHID is not available in this browser</AlertTitle>
               <AlertDescription>
-                Use desktop Chrome or Edge on https or localhost, or switch on the mock keyboard.
+                Use desktop Chrome or Edge, on https or localhost.
               </AlertDescription>
             </Alert>
           )}

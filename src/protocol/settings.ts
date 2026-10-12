@@ -192,7 +192,9 @@ export function planStaticColor(settings: Uint8Array, colorTable: Uint8Array | n
 
   const layoutOk = colorTable !== null && colorTableMatchesLayout(colorTable)
   const row = layoutOk ? colorRow(colorTable, FIXED_ON) : FIRMWARE_COLORS
-  let colorIndex = row.findIndex((c) => sameBytes(c, rgb))
+  // Keep the selected colour if it already is this one (a row can hold a colour twice).
+  const current = effectSlot(settings, FIXED_ON).color
+  let colorIndex = current < row.length && sameBytes(row[current], rgb) ? current : row.findIndex((c) => sameBytes(c, rgb))
   let table: Uint8Array | null = null
 
   if (colorIndex < 0) {

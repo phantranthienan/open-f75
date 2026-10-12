@@ -67,10 +67,20 @@ test.describe('connecting over WebHID', () => {
     await expect(page.getByRole('log')).toContainText('Device disconnected')
   })
 
-  test('offers the mock keyboard when the browser has no WebHID', async ({ page }) => {
+  test('explains that the browser has no WebHID, and offers no Connect', async ({ page }) => {
     await page.addInitScript(() => delete (Navigator.prototype as { hid?: unknown }).hid)
     await page.goto('/')
-    await expect(page.getByRole('switch', { name: 'Mock keyboard' })).toBeChecked()
-    await expect(page.getByRole('button', { name: 'Connect' })).toBeEnabled()
+    await expect(page.getByText('WebHID is not available in this browser')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Connect' })).toBeDisabled()
+  })
+
+  test('ignores a second connect event while connected', async ({ page }) => {
+    await openWithBoard(page, { granted: true })
+    await expect(page.getByText('This is an F75.')).toBeVisible()
+    await page.evaluate(() => window.__fakeHid.announce())
+    await page.waitForTimeout(300)
+
+    await expect(page.getByRole('log').getByText(/^Connected via WebHID/)).toHaveCount(1)
+    expect(await sent(page)).toHaveLength(1)
   })
 })

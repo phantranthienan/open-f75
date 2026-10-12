@@ -3,8 +3,7 @@
  * Pure functions only. The app does not send these, and the allowlist refuses
  * report 0x13 (wired mode only). They are kept because they carry the same
  * 128-byte settings page and 512-byte colour table as the wired protocol,
- * split into 14-byte fragments (see the bottom of this file), and the mock
- * builds its colour table from the OEM palette below.
+ * split into 14-byte fragments (see the bottom of this file).
  *
  * Over the cable the F75 uses wired.ts instead: its interface declares no
  * report 0x13 at all (references/AulaSofwareLinux/src/hid.rs, F75 descriptor).
