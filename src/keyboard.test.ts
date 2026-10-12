@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { Keyboard } from './keyboard'
-import { createLog } from './log'
-import { toHex } from './protocol/bytes'
-import { FIXED_ON, colorRow } from './protocol/settings'
-import { createSafeSend } from './safe-send'
-import { MOCK_DEVICE, MockTransport, type MockOptions } from './transports/mock'
+import { Keyboard } from '@/keyboard'
+import { createLog } from '@/log'
+import { toHex } from '@/protocol/bytes'
+import { FIXED_ON, colorRow } from '@/protocol/settings'
+import { createSafeSend } from '@/safe-send'
+import { MOCK_DEVICE, MockTransport, type MockOptions } from '@/transports/mock'
 
 const F87_IDENTITY = [0x03, 0, 0, 0, 0x00, 0x8f]
 

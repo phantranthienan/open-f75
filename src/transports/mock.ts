@@ -4,12 +4,12 @@
  * reads, and keeps what is written, so tests and the UI can check what a real
  * board would show after a replug.
  */
-import { parseReportDescriptor } from '../hid-descriptor'
-import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID } from '../protocol/ids'
-import { describeBoard, type BoardState } from '../protocol/settings'
-import { Cmd, DATA_LENGTH, HEADER_LENGTH, INFO_IDENTITY, REPORT_ID, REPORT_LENGTH, parseHeader } from '../protocol/wired'
-import type { DeviceInfo, InputReport, ReportType, Transport } from '../transport'
-import { F75_INTERFACE1_DESCRIPTOR, F75_SETTINGS, F87_COLOR_TABLE } from './mock-data'
+import { parseReportDescriptor } from '@/hid-descriptor'
+import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID } from '@/protocol/ids'
+import { describeBoard, type BoardState } from '@/protocol/settings'
+import { Cmd, DATA_LENGTH, HEADER_LENGTH, INFO_IDENTITY, REPORT_ID, REPORT_LENGTH, parseHeader } from '@/protocol/wired'
+import type { DeviceInfo, InputReport, ReportType, Transport } from '@/transport'
+import { F75_INTERFACE1_DESCRIPTOR, F75_SETTINGS, F87_COLOR_TABLE } from '@/transports/mock-data'
 
 /** Interface 1 of a real F75. Interface 0, the boot keyboard, is left out: browsers hide it. */
 export const MOCK_DEVICE: DeviceInfo = {

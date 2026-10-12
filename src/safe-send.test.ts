@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createLog } from './log'
-import { buildFrame } from './protocol/dongle'
-import { Cmd, buildIdentityRequest, buildReadRequest, buildWrite } from './protocol/wired'
-import { BlockedPacketError, createSafeSend, featurePacket, inspect, type Packet } from './safe-send'
-import { F75_SETTINGS, F87_COLOR_TABLE } from './transports/mock-data'
-import { MockTransport } from './transports/mock'
+import { createLog } from '@/log'
+import { buildFrame } from '@/protocol/dongle'
+import { Cmd, buildIdentityRequest, buildReadRequest, buildWrite } from '@/protocol/wired'
+import { BlockedPacketError, createSafeSend, featurePacket, inspect, type Packet } from '@/safe-send'
+import { F75_SETTINGS, F87_COLOR_TABLE } from '@/transports/mock-data'
+import { MockTransport } from '@/transports/mock'
 
 const settingsWrite = () => buildWrite(Cmd.SetSettings, 0, F75_SETTINGS)
 const tableWrite = () => buildWrite(Cmd.SetColorTable, 0, F87_COLOR_TABLE)

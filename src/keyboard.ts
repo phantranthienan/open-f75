@@ -6,10 +6,10 @@
  * read the region, patch the bytes that need changing, write it back, then
  * read it again and check the bytes stuck.
  */
-import { assessDevice, type Assessment, type IdentityState } from './device-check'
-import type { Log } from './log'
-import { formatHexColor, toHex, type Rgb } from './protocol/bytes'
-import { modelName } from './protocol/ids'
+import { assessDevice, type Assessment, type IdentityState } from '@/device-check'
+import type { Log } from '@/log'
+import { formatHexColor, toHex, type Rgb } from '@/protocol/bytes'
+import { modelName } from '@/protocol/ids'
 import {
   COLOR_NAMES,
   COLOR_TABLE_LENGTH,
@@ -17,7 +17,7 @@ import {
   assertSettingsPage,
   planStaticColor,
   type StaticColorPlan,
-} from './protocol/settings'
+} from '@/protocol/settings'
 import {
   Cmd,
   IDENTITY_LENGTH,
@@ -30,9 +30,9 @@ import {
   compactHex,
   normalizeReply,
   parseReply,
-} from './protocol/wired'
-import { BlockedPacketError, featurePacket, type SafeSend, type SendResult } from './safe-send'
-import { formatId, type DeviceInfo, type Transport } from './transport'
+} from '@/protocol/wired'
+import { BlockedPacketError, featurePacket, type SafeSend, type SendResult } from '@/safe-send'
+import { formatId, type DeviceInfo, type Transport } from '@/transport'
 
 export interface Backup {
   format: 'open-f75-backup'

@@ -1,7 +1,7 @@
 /**
  * Real bytes for the mock board, each with its provenance.
  */
-import { buildPalette, colorTableFromPaletteFrames } from '../protocol/dongle'
+import { buildPalette, colorTableFromPaletteFrames } from '@/protocol/dongle'
 
 /**
  * HID report descriptor of an AULA F75's second interface (258A:010C),

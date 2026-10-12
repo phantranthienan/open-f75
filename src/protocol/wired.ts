@@ -24,7 +24,7 @@
  *   [CAP]  test/golden/f87-wired-direct.json: the OEM app's 0x08 frames carry
  *          `01 00 7a 01` = 1 package, index 0, length 378 (126 LEDs x 3)
  */
-import { toHex } from './bytes'
+import { toHex } from '@/protocol/bytes'
 
 export const REPORT_ID = 0x06
 /** Whole report including the report ID; the firmware rejects short reports [ASL]. */

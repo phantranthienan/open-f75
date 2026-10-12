@@ -31,7 +31,7 @@
  *   [RS]      github.com/RustamSheoran/aula-f75 README (0x8a/0x0a = 512-byte colour table)
  *   [F87-CAP] test/golden/f87-dongle-fixed-on-*.json
  */
-import { assertRgb, sameBytes, type Rgb } from './bytes'
+import { assertRgb, sameBytes, type Rgb } from '@/protocol/bytes'
 
 export const SETTINGS_LENGTH = 128
 export const COLOR_TABLE_LENGTH = 512

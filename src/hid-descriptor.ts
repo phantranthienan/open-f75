@@ -4,7 +4,7 @@
  * The mock uses it on the real F75 descriptor; a hidapi transport (Tauri)
  * will get raw descriptors and need the same thing.
  */
-import type { CollectionInfo, ReportInfo } from './transport'
+import type { CollectionInfo, ReportInfo } from '@/transport'
 
 type Kind = 'input' | 'output' | 'feature'
 

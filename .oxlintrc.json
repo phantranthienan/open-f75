@@ -1,15 +1,45 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "ignorePatterns": ["references/**", "dist/**"],
+  "plugins": [
+    "react",
+    "typescript",
+    "oxc"
+  ],
+  "ignorePatterns": [
+    "references/**",
+    "dist/**"
+  ],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react/only-export-components": [
+      "warn",
+      {
+        "allowConstantExport": true
+      }
+    ],
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "./**",
+              "../**"
+            ],
+            "message": "Import with the '@/' alias (or '@test/' for test/), not a relative path."
+          }
+        ]
+      }
+    ]
   },
   "overrides": [
     {
-      "files": ["src/ui/components/ui/**"],
-      "rules": { "react/only-export-components": "off" }
+      "files": [
+        "src/ui/components/ui/**"
+      ],
+      "rules": {
+        "react/only-export-components": "off"
+      }
     }
   ]
 }

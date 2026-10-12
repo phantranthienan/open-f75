@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import blue from '../../test/golden/f87-dongle-fixed-on-blue.json'
-import green from '../../test/golden/f87-dongle-fixed-on-green.json'
-import red from '../../test/golden/f87-dongle-fixed-on-red.json'
-import { F75_SETTINGS } from '../transports/mock-data'
-import { formatHexColor, fromHex, parseHexColor, toHex, type Rgb } from './bytes'
+import blue from '@test/golden/f87-dongle-fixed-on-blue.json'
+import green from '@test/golden/f87-dongle-fixed-on-green.json'
+import red from '@test/golden/f87-dongle-fixed-on-red.json'
+import { F75_SETTINGS } from '@/transports/mock-data'
+import { formatHexColor, fromHex, parseHexColor, toHex, type Rgb } from '@/protocol/bytes'
 import {
   CONFIG_FRAME_COUNT,
   PALETTE_FRAME_COUNT,
@@ -18,8 +18,8 @@ import {
   colorTableFromPaletteFrames,
   isValidFrame,
   settingsFromConfigFrames,
-} from './dongle'
-import { FIXED_ON, SettingsOffset, colorRow, colorTableMatchesLayout, effectSlot, isSettingsPage } from './settings'
+} from '@/protocol/dongle'
+import { FIXED_ON, SettingsOffset, colorRow, colorTableMatchesLayout, effectSlot, isSettingsPage } from '@/protocol/settings'
 
 interface Golden {
   frames: { dir: string; hex: string }[]

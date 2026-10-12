@@ -5,10 +5,10 @@
  * the identity read. Everything else needs the identity to say AULA F75:
  * the USB IDs are shared by other AULA models and other brands (protocol/ids.ts).
  */
-import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID, isF75, modelName } from './protocol/ids'
-import { toHex } from './protocol/bytes'
-import { DATA_LENGTH, REPORT_ID } from './protocol/wired'
-import { formatId, type DeviceInfo } from './transport'
+import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID, isF75, modelName } from '@/protocol/ids'
+import { toHex } from '@/protocol/bytes'
+import { DATA_LENGTH, REPORT_ID } from '@/protocol/wired'
+import { formatId, type DeviceInfo } from '@/transport'
 
 export type IdentityState =
   | { status: 'unread' }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseReportDescriptor } from './hid-descriptor'
-import { F75_INTERFACE1_DESCRIPTOR } from './transports/mock-data'
+import { parseReportDescriptor } from '@/hid-descriptor'
+import { F75_INTERFACE1_DESCRIPTOR } from '@/transports/mock-data'
 
 describe('parseReportDescriptor (real F75 interface 1)', () => {
   const collections = parseReportDescriptor(F75_INTERFACE1_DESCRIPTOR)

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './ui/App.tsx'
+import '@/index.css'
+import App from '@/ui/App'
 
 // Follow the OS light/dark setting.
 const dark = window.matchMedia('(prefers-color-scheme: dark)')

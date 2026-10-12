@@ -28,8 +28,8 @@
  *   3. write palette  37 frames, each echoed
  *   4. save            1 frame, echoed
  */
-import { assertRgb, toHex, type Rgb } from './bytes'
-import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH } from './settings'
+import { assertRgb, toHex, type Rgb } from '@/protocol/bytes'
+import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH } from '@/protocol/settings'
 
 export const REPORT_ID = 0x13
 export const FRAME_LENGTH = 20 // including the report ID byte

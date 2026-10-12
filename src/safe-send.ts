@@ -12,9 +12,9 @@
  *   - dry run blocks every write; reads still go out so a dry run can show the
  *     exact bytes it would have written for the board's real settings
  */
-import type { Log } from './log'
-import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH, hasColorTableMarker, isSettingsPage } from './protocol/settings'
-import { toHex } from './protocol/bytes'
+import type { Log } from '@/log'
+import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH, hasColorTableMarker, isSettingsPage } from '@/protocol/settings'
+import { toHex } from '@/protocol/bytes'
 import {
   Cmd,
   DATA_LENGTH,
@@ -24,8 +24,8 @@ import {
   REPORT_ID,
   compactHex,
   parseHeader,
-} from './protocol/wired'
-import type { ReportType, Transport } from './transport'
+} from '@/protocol/wired'
+import type { ReportType, Transport } from '@/transport'
 
 export interface Packet {
   type: ReportType

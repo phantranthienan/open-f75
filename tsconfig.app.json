@@ -25,7 +25,8 @@
 
     /* Path alias, shared with vite.config.ts and components.json */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@test/*": ["./test/*"]
     }
   },
   "include": ["src"],

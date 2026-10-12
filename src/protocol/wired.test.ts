@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import direct from '../../test/golden/f87-wired-direct.json'
-import { fromHex, toHex } from './bytes'
+import direct from '@test/golden/f87-wired-direct.json'
+import { fromHex, toHex } from '@/protocol/bytes'
 import {
   Cmd,
   DATA_LENGTH,
@@ -12,7 +12,7 @@ import {
   normalizeReply,
   parseHeader,
   parseReply,
-} from './wired'
+} from '@/protocol/wired'
 
 describe('framing', () => {
   it('builds the identity request byte for byte as AULA\'s driver and OpenRGB do', () => {

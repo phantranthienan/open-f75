@@ -1,7 +1,7 @@
 /**
  * WebHID transport (Chrome/Edge, v1). The only file that touches navigator.hid.
  */
-import { AULA_VENDOR_ID } from '../protocol/ids'
+import { AULA_VENDOR_ID } from '@/protocol/ids'
 import type {
   CollectionInfo,
   DeviceInfo,
@@ -9,7 +9,7 @@ import type {
   ReportInfo,
   ReportType,
   Transport,
-} from '../transport'
+} from '@/transport'
 
 const FILTERS: HIDDeviceFilter[] = [{ vendorId: AULA_VENDOR_ID }]
 

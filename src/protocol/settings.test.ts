@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { F75_SETTINGS, F87_COLOR_TABLE } from '../transports/mock-data'
-import type { Rgb } from './bytes'
+import { F75_SETTINGS, F87_COLOR_TABLE } from '@/transports/mock-data'
+import type { Rgb } from '@/protocol/bytes'
 import {
   FIXED_ON,
   SettingsOffset,
@@ -10,7 +10,7 @@ import {
   effectSlot,
   isSettingsPage,
   planStaticColor,
-} from './settings'
+} from '@/protocol/settings'
 
 const page = () => Uint8Array.from(F75_SETTINGS)
 const table = () => Uint8Array.from(F87_COLOR_TABLE)

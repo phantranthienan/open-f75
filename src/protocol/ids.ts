@@ -13,7 +13,7 @@
  *   [ORGB] references/OpenRGB/Controllers/SinowealthController/SinowealthKeyboard10cController
  *          (model byte 0xCD = "AULA F75")
  */
-import { sameBytes, toHex } from './bytes'
+import { sameBytes, toHex } from '@/protocol/bytes'
 
 export const AULA_VENDOR_ID = 0x258a
 export const F75_WIRED_PRODUCT_ID = 0x010c
