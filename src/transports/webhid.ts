@@ -81,11 +81,6 @@ export class WebHidTransport implements Transport {
     return this.open(picked)
   }
 
-  async reconnect(): Promise<DeviceInfo | null> {
-    const granted = (await navigator.hid.getDevices()).filter((d) => d.vendorId === AULA_VENDOR_ID)
-    return granted.length ? this.open(granted) : null
-  }
-
   async disconnect(): Promise<void> {
     navigator.hid.removeEventListener('disconnect', this.handleDisconnect)
     const devices = this.devices
@@ -123,14 +118,6 @@ export class WebHidTransport implements Transport {
   onDisconnect(listener: () => void): () => void {
     this.disconnectListeners.add(listener)
     return () => this.disconnectListeners.delete(listener)
-  }
-
-  onAvailable(listener: () => void): () => void {
-    const handler = (event: HIDConnectionEvent) => {
-      if (event.device.vendorId === AULA_VENDOR_ID) listener()
-    }
-    navigator.hid.addEventListener('connect', handler)
-    return () => navigator.hid.removeEventListener('connect', handler)
   }
 
   /** Opens every interface of one physical device; browsers list each interface separately. */

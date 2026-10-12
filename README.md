@@ -19,7 +19,7 @@ WebHID only works in Chromium browsers, on `https` or `localhost`.
 ## First session with the real board
 
 1. Plug the F75 in by cable and switch it to wired mode. The hardware factory reset is `Fn+Esc`, held.
-2. **Connect** and pick the board. The app opens every interface the browser grants. If the checks then say feature report `0x06` is missing, connect again and pick the board's other entry.
+2. **Connect** and pick the board. The app never connects on its own, so do this after every page load. It opens every interface the browser grants. If the checks then say feature report `0x06` is missing, connect again and pick the board's other entry.
 3. The Device card runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If they pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
 4. **Copy JSON** on the Device card and keep it. That is your Phase 0 record.
 5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table.
@@ -114,7 +114,7 @@ End-to-end only: Playwright drives the real app in Chromium with a fake F75 inst
 test/
   fixtures/      app.ts (helpers, fails a test on any console error), fake-hid.ts (the fake F75),
                  f75.ts (identity, settings page and colour table from the owner's F75)
-  connect/       identity read, other models and product IDs, reconnect, unplug, no WebHID
+  connect/       identity read, reply formats, other models and product IDs, no auto-connect, unplug, no WebHID
   safety/        the transport refuses everything off the allowlist, even with the guard bypassed
   static-color/  dry run, firmware colour (one byte), custom colour, no-op, ignored writes
   backup/        the downloaded JSON, reads only

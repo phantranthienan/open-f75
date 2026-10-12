@@ -67,35 +67,20 @@ export function useSession() {
     [transport, setKeyboard, run],
   )
 
-  // Silent reconnect: on load, and whenever a granted board is plugged back in.
+  // No automatic reconnect: the board is only opened by a click on Connect, after
+  // every page load. This only reacts to the board going away, and closes it on unmount.
   useEffect(() => {
     if (!webHidSupported) return
-    let cancelled = false
-    const tryReconnect = async () => {
-      // Already connected: a second "connect" event must not reopen the board mid-operation.
-      if (keyboardRef.current) return
-      try {
-        const device = await transport.reconnect()
-        if (device && !cancelled && !keyboardRef.current) attach(device)
-      } catch (err) {
-        log.add('error', `Reconnect failed: ${String(err)}`)
-      }
-    }
-
-    void tryReconnect()
-    const stopAvailable = transport.onAvailable?.(() => void tryReconnect())
     const stopDisconnect = transport.onDisconnect(() => {
       setKeyboard(null)
       log.add('info', 'Device disconnected')
     })
     return () => {
-      cancelled = true
-      stopAvailable?.()
       stopDisconnect()
       setKeyboard(null)
       void transport.disconnect()
     }
-  }, [webHidSupported, transport, attach, setKeyboard])
+  }, [webHidSupported, transport, setKeyboard])
 
   const connect = useCallback(async () => {
     try {

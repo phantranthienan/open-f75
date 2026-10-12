@@ -28,7 +28,7 @@ export interface FakeBoard {
   settings: number[]
   colorTable: number[]
   productId: number
-  /** Already granted in an earlier visit, so navigator.hid.getDevices() returns it. */
+  /** Granted in an earlier visit, so navigator.hid.getDevices() returns it. The app must not use that. */
   granted: boolean
   replyFormat: ReplyFormat
   /** Accept writes but keep the old bytes. */

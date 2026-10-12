@@ -41,11 +41,11 @@ export interface InputReport {
 export interface Transport {
   readonly name: string
 
-  /** Opens a device, prompting the user to pick one. WebHID needs a click to call this. */
+  /**
+   * Opens a device, prompting the user to pick one. The only way the app opens
+   * the board: there is no automatic reconnect. WebHID needs a click to call this.
+   */
   connect(): Promise<DeviceInfo>
-
-  /** Reopens a device the user granted before, without a prompt. Null if there is none. */
-  reconnect(): Promise<DeviceInfo | null>
 
   disconnect(): Promise<void>
 
@@ -63,9 +63,6 @@ export interface Transport {
 
   /** Fires when the open device goes away (unplugged, mode switch, sleep). */
   onDisconnect(listener: () => void): () => void
-
-  /** Fires when a device the user granted before is plugged back in. Optional. */
-  onAvailable?(listener: () => void): () => void
 }
 
 export function declaresReport(info: DeviceInfo, type: ReportType | 'input', reportId: number): boolean {

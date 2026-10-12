@@ -53,9 +53,13 @@ test.describe('connecting over WebHID', () => {
     expect(await sent(page)).toEqual([])
   })
 
-  test('reconnects silently to a board granted earlier', async ({ page }) => {
-    await openWithBoard(page, { granted: true })
-    await expect(page.getByText('This is an F75.')).toBeVisible()
+  test('never connects on its own: not on page load, not when the board is plugged in', async ({ page }) => {
+    await openWithBoard(page, { granted: true }) // Chrome remembers the board from an earlier visit
+    await page.evaluate(() => window.__fakeHid.announce())
+    await page.waitForTimeout(500)
+
+    await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible()
+    expect(await sent(page)).toEqual([])
   })
 
   test('notices when the board is unplugged', async ({ page }) => {
@@ -74,9 +78,9 @@ test.describe('connecting over WebHID', () => {
     await expect(page.getByRole('button', { name: 'Connect' })).toBeDisabled()
   })
 
-  test('ignores a second connect event while connected', async ({ page }) => {
-    await openWithBoard(page, { granted: true })
-    await expect(page.getByText('This is an F75.')).toBeVisible()
+  test('a plug-in event while connected does not reopen the board', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
     await page.evaluate(() => window.__fakeHid.announce())
     await page.waitForTimeout(300)
 
