@@ -29,7 +29,7 @@ export const BOARD: FakeBoard = {
   colorTable: [...F87_COLOR_TABLE],
   productId: 0x010c,
   granted: false,
-  replyWithReportId: false,
+  replyFormat: 'short-with-id', // what Chrome on macOS did with the real F75
   ignoreWrites: false,
 }
 

@@ -17,9 +17,21 @@ test.describe('connecting over WebHID', () => {
     await expect(page.getByRole('cell', { name: '0x06 · 519 B' })).toBeVisible()
   })
 
-  test('accepts replies that start with the report ID', async ({ page }) => {
-    await openWithBoard(page, { replyWithReportId: true })
-    await connectF75(page)
+  for (const replyFormat of ['short-with-id', 'short', 'full', 'full-with-id'] as const) {
+    test(`reads the identity from a ${replyFormat} reply`, async ({ page }) => {
+      await openWithBoard(page, { replyFormat })
+      await connectF75(page)
+    })
+  }
+
+  test('says so when the identity read fails, and sends nothing else', async ({ page }) => {
+    await openWithBoard(page, { identity: null })
+    await connect(page)
+
+    await expect(page.getByText(/^The identity read failed, so the app sends nothing else/)).toBeVisible()
+    await expect(page.getByRole('log')).toContainText('Identity read failed: reply does not answer command 0x82')
+    expect(await sent(page)).toHaveLength(1)
+    await expect(page.getByRole('button', { name: 'Back up config' })).toBeDisabled()
   })
 
   test('sends nothing beyond the identity read to another model', async ({ page }) => {
@@ -27,6 +39,7 @@ test.describe('connecting over WebHID', () => {
     await connect(page)
 
     await expect(page.getByText('AULA F87. Only the F75 is supported.')).toBeVisible()
+    await expect(page.getByText(/^This board identifies as AULA F87, not an F75/)).toBeVisible()
     expect(await sent(page)).toHaveLength(1)
     await expect(page.getByRole('button', { name: 'Back up config' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Dry run' })).toBeDisabled()

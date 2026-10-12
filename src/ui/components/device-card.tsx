@@ -71,12 +71,8 @@ export function DeviceCard({ session }: { session: Session }) {
               ))}
             </ul>
 
-            {assessment.checks.some((c) => !c.ok && !c.pending) && (
-              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {assessment.canIdentify
-                  ? 'This board is not an F75, so the app sends it nothing beyond the identity read.'
-                  : 'A check failed, so the app will not send anything to this device.'}
-              </p>
+            {assessment.blocked && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{assessment.blocked}</p>
             )}
 
             <div className="overflow-x-auto rounded-md border">

@@ -20,6 +20,7 @@ import {
 } from '@/protocol/settings'
 import {
   Cmd,
+  HEADER_LENGTH,
   IDENTITY_LENGTH,
   INFO_IDENTITY,
   REPORT_ID,
@@ -27,8 +28,6 @@ import {
   buildIdentityRequest,
   buildReadRequest,
   buildWrite,
-  compactHex,
-  normalizeReply,
   parseReply,
 } from '@/protocol/wired'
 import { BlockedPacketError, featurePacket } from '@/allowlist'
@@ -236,9 +235,11 @@ export class Keyboard {
   private async query(cmd: number, param: number, length: number, request = buildReadRequest(cmd, param, length)) {
     await this.transfer(request)
     await sleep(this.delayMs)
-    const reply = normalizeReply(await this.transport.receiveFeature(REPORT_ID))
-    this.log.add('rx', `reply to ${offset(cmd)}`, compactHex(reply, true))
-    return parseReply(reply, cmd, length)
+    const raw = await this.transport.receiveFeature(REPORT_ID)
+    // Logged before parsing, so a reply that fails to parse still shows its bytes.
+    // Only as much as can matter is shown: an optional report ID, the header and the data.
+    this.log.add('rx', `reply to ${offset(cmd)} (${raw.length} bytes)`, toHex(raw.subarray(0, HEADER_LENGTH + length)))
+    return parseReply(raw, cmd, length)
   }
 
   private write(cmd: number, data: Uint8Array): Promise<SendResult> {

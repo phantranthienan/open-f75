@@ -107,27 +107,27 @@ export function buildIdentityRequest(): Uint8Array {
 }
 
 /**
- * A GET_FEATURE result as a full 520-byte frame. Browsers differ on whether
- * the result starts with the report ID, so both 519 and 520 bytes are accepted.
+ * The `length` data bytes of a GET_FEATURE reply, after checking it answers `cmd`.
+ *
+ * Platforms hand the reply over differently, so all of these are accepted:
+ *   - with or without the report ID as the first byte
+ *   - the full 519/520 bytes, or only what the board sent: Chrome on macOS
+ *     returned 14 bytes for the identity reply on a real F75, which is
+ *     report ID + 7 header bytes + 6 identity bytes
+ * A reply that does not start with the command, or is too short to hold
+ * `length` data bytes, is refused.
  */
-export function normalizeReply(raw: Uint8Array): Uint8Array {
-  if (raw.length === REPORT_LENGTH && raw[0] === REPORT_ID) return raw
-  if (raw.length === DATA_LENGTH) {
-    const full = new Uint8Array(REPORT_LENGTH)
-    full[0] = REPORT_ID
-    full.set(raw, 1)
-    return full
+export function parseReply(raw: Uint8Array, cmd: number, length: number): Uint8Array {
+  // `body` starts at the command byte, i.e. it is the frame without its report ID.
+  const body = raw[0] === REPORT_ID && raw[1] === cmd ? raw.subarray(1) : raw[0] === cmd ? raw : null
+  if (!body) {
+    throw new Error(`reply does not answer command 0x${cmd.toString(16)}: starts ${toHex(raw.subarray(0, 8))}`)
   }
-  throw new Error(`reply is ${raw.length} bytes, expected ${DATA_LENGTH} or ${REPORT_LENGTH}`)
-}
-
-/** The `length` data bytes of a reply, after checking it answers `cmd`. */
-export function parseReply(reply: Uint8Array, cmd: number, length: number): Uint8Array {
-  const full = normalizeReply(reply)
-  if (full[1] !== cmd) {
-    throw new Error(`reply is for command 0x${full[1].toString(16)}, expected 0x${cmd.toString(16)}`)
+  const dataStart = HEADER_LENGTH - 1
+  if (body.length < dataStart + length) {
+    throw new Error(`reply carries ${Math.max(0, body.length - dataStart)} data bytes, expected ${length}`)
   }
-  return full.slice(HEADER_LENGTH, HEADER_LENGTH + length)
+  return body.slice(dataStart, dataStart + length)
 }
 
 export const isReadCommand = (cmd: number) => (cmd & 0x80) !== 0

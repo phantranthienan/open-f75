@@ -29,6 +29,8 @@ export interface Assessment {
   canIdentify: boolean
   /** Every check passes, including identity: the app may talk to the board. */
   canSend: boolean
+  /** Why the app is holding back, for the UI. Null when nothing is blocked (yet). */
+  blocked: string | null
 }
 
 const VENDOR_USAGE_PAGE = 0xff00
@@ -84,5 +86,12 @@ export function assessDevice(info: DeviceInfo, identity: IdentityState = { statu
   ]
   const canIdentify = descriptorChecks.every((c) => c.ok)
   const checks = [...descriptorChecks, identityCheck(identity)]
-  return { checks, canIdentify, canSend: checks.every((c) => c.ok) }
+  let blocked: string | null = null
+  if (!canIdentify) blocked = 'A check failed, so the app will not send anything to this device.'
+  else if (identity.status === 'failed') {
+    blocked = 'The identity read failed, so the app sends nothing else. Disconnect and connect again to retry; the log shows the reply.'
+  } else if (identity.status === 'read' && !isF75(identity.bytes)) {
+    blocked = `This board identifies as ${modelName(identity.bytes)}, not an F75, so the app sends it nothing beyond the identity read.`
+  }
+  return { checks, canIdentify, canSend: checks.every((c) => c.ok), blocked }
 }

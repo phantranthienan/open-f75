@@ -3,9 +3,10 @@
  * WebHID transport and can check every byte that crosses the HID boundary.
  *
  * It answers the wired protocol (0x06 feature reports): identity, settings
- * page and colour table reads, and keeps what is written. The collections
- * are the F75's second interface in WebHID's shape, written out by hand from
- * the real descriptor (references/AulaSofwareLinux/src/hid.rs, F75_IFACE1).
+ * page and colour table reads, and keeps what is written. The collections are
+ * what Chrome on macOS showed for the owner's real F75 (Device card JSON):
+ * one interface, with the keyboard and system-control collections hidden by
+ * the browser, and a mouse whose pointer child carries input report 0x07.
  */
 
 export interface SentReport {
@@ -15,15 +16,21 @@ export interface SentReport {
   data: number[]
 }
 
+/**
+ * How GET_FEATURE results reach the page. Chrome on macOS returned 14 bytes for
+ * the identity reply on the real F75: report ID, header and data, no padding.
+ */
+export type ReplyFormat = 'short-with-id' | 'short' | 'full' | 'full-with-id'
+
 export interface FakeBoard {
-  identity: number[]
+  /** Null: the board never answers the identity read. */
+  identity: number[] | null
   settings: number[]
   colorTable: number[]
   productId: number
   /** Already granted in an earlier visit, so navigator.hid.getDevices() returns it. */
   granted: boolean
-  /** GET_FEATURE results start with the report ID, as some platforms do. */
-  replyWithReportId: boolean
+  replyFormat: ReplyFormat
   /** Accept writes but keep the old bytes. */
   ignoreWrites: boolean
 }
@@ -46,22 +53,22 @@ export function installFakeHid(board: FakeBoard): void {
     reportId,
     items: items.map(([reportSize, reportCount]) => ({ reportSize, reportCount })),
   })
-  const collection = (usagePage: number, usage: number, reports: { input?: unknown[]; feature?: unknown[] }) => ({
+  type Reports = { input?: unknown[]; feature?: unknown[]; children?: unknown[] }
+  const collection = (usagePage: number, usage: number, reports: Reports = {}) => ({
     usagePage,
     usage,
     type: 1,
-    children: [],
+    children: reports.children ?? [],
     inputReports: reports.input ?? [],
     outputReports: [],
     featureReports: reports.feature ?? [],
   })
   const collections = [
-    collection(0x0001, 0x80, { input: [report(1, [[1, 3], [5, 1]])] }),
     collection(0x000c, 0x01, { input: [report(2, [[16, 1]])] }),
     collection(0xff00, 0x01, { input: [report(3, [[8, 3]])] }),
-    collection(0x0001, 0x06, { input: [report(4, [[1, 120]])] }),
     collection(0xff00, 0x01, { feature: [report(5, [[8, 5]])] }),
     collection(0xff00, 0x01, { input: [report(6, [[8, 7]])], feature: [report(6, [[8, 519]])] }),
+    collection(0x0001, 0x02, { children: [collection(0x0001, 0x01, { input: [report(7, [[8, 7]])] })] }),
   ]
 
   const sent: SentReport[] = []
@@ -75,7 +82,7 @@ export function installFakeHid(board: FakeBoard): void {
     opened = false
     readonly vendorId = 0x258a
     readonly productId = board.productId
-    readonly productName = 'AULA F75 (fake)'
+    readonly productName = 'Gaming Keyboard'
     readonly collections = collections
     async open() {
       this.opened = true
@@ -94,13 +101,12 @@ export function installFakeHid(board: FakeBoard): void {
       const length = bytes[5] | (bytes[6] << 8)
       const payload = bytes.slice(7, 7 + length)
       const stage = (data: number[]) => {
-        reply = [...header, ...data]
-        while (reply.length < 520) reply.push(0)
+        reply = [...header, ...data] // what the board sends: header + data, report ID first
       }
       reply = null
       switch (bytes[0]) {
         case 0x82:
-          if (bytes[1] === 0x01) stage(board.identity)
+          if (bytes[1] === 0x01 && board.identity) stage(board.identity)
           break
         case 0x84:
           stage(settings)
@@ -117,8 +123,12 @@ export function installFakeHid(board: FakeBoard): void {
       }
     }
     async receiveFeatureReport(reportId: number) {
-      const full = reportId === 0x06 && reply ? reply : new Array(520).fill(0)
-      return new DataView(Uint8Array.from(board.replyWithReportId ? full : full.slice(1)).buffer)
+      const short = reportId === 0x06 && reply ? reply : [reportId]
+      const full = [...short, ...new Array(520 - short.length).fill(0)]
+      const bytes = { 'short-with-id': short, short: short.slice(1), full: full.slice(1), 'full-with-id': full }[
+        board.replyFormat
+      ]
+      return new DataView(Uint8Array.from(bytes).buffer)
     }
   }
 
