@@ -53,7 +53,8 @@ The reference projects are git submodules. You only need them to read the source
 4. **Copy JSON** on the device pane and keep it. It is the record of what your board exposes.
 5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table. Do this before the first write.
 6. Pick a colour on the wheel (or type one) and press **Dry run**. The app reads the board for real, then logs the bytes it would change and the frames it would write, without sending them.
-7. Turn dry run off in the top bar and send a colour. Then unplug and replug to check that it stays.
+7. Turn dry run off in the top bar and send green (`#00ff00`). On a board like the owner's it changes one settings byte, the best-proven path. Then unplug and replug to check that it stays.
+8. Only then try a custom colour, which also writes the colour table (see [the two paths](#setting-a-colour-the-two-paths)), and replug again. Change one thing at a time.
 
 ## How it fits together
 
