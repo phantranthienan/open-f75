@@ -1,0 +1,6 @@
+[submodule "references/Aula-F87-Controller"]
+	path = references/Aula-F87-Controller
+	url = https://github.com/marcoslor/Aula-F87-Controller
+[submodule "references/OpenAula"]
+	path = references/OpenAula
+	url = https://github.com/cvsqwe/OpenAula
