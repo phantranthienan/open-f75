@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { Assessment } from '@/device-check'
+import type { Assessment, IdentityState } from '@/device-check'
 import { Keyboard, type Backup, type ColorResult } from '@/keyboard'
 import { createLog } from '@/log'
 import type { Rgb } from '@/protocol/bytes'
@@ -18,12 +18,14 @@ export function useSession() {
   const transport = useMemo(() => new WebHidTransport(), [])
   const [keyboard, setKeyboardState] = useState<Keyboard | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
+  const [identity, setIdentity] = useState<IdentityState | null>(null)
   const keyboardRef = useRef<Keyboard | null>(null)
   const setKeyboard = useCallback((next: Keyboard | null) => {
     keyboardRef.current?.dispose()
     keyboardRef.current = next
     setKeyboardState(next)
     setAssessment(next?.assessment ?? null)
+    setIdentity(next?.identity ?? null)
   }, [])
   const [busy, setBusy] = useState(false)
 
@@ -49,7 +51,10 @@ export function useSession() {
       log.add('error', `${label}: ${error}`)
       return { ok: false, error }
     } finally {
-      if (keyboardRef.current === kb) setAssessment(kb.assessment)
+      if (keyboardRef.current === kb) {
+        setAssessment(kb.assessment)
+        setIdentity(kb.identity)
+      }
       setBusy(false)
     }
   }, [])
@@ -111,6 +116,7 @@ export function useSession() {
     transportName: transport.name,
     device: keyboard?.device ?? null,
     assessment,
+    identity,
     connected: keyboard !== null,
     busy,
     dryRun,

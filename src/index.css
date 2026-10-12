@@ -1,84 +1,58 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/jetbrains-mono";
 
 /* The reference repos are git submodules; keep Tailwind from scanning them. */
 @source not "../references";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Design system from the ui-ux-pro-max skill ("developer tool terminal
+ * dashboard hardware", density 8, motion 2): Dark Mode (OLED) style,
+ * "code dark + run green" palette, JetBrains Mono. Dark only: the skill rates
+ * light mode "not recommended" for this style.
+ *
+ * Signal colours are additions for terminal states; each reaches at least
+ * 4.5:1 on --background, and is always paired with text, never colour alone.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+  color-scheme: dark;
+  --radius: 0.25rem;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --card: #1b2336;
+  --card-foreground: #f8fafc;
+  --popover: #1b2336;
+  --popover-foreground: #f8fafc;
+  --primary: #22c55e;
+  --primary-foreground: #0f172a;
+  --secondary: #334155;
+  --secondary-foreground: #ffffff;
+  --muted: #272f42;
+  --muted-foreground: #94a3b8;
+  --accent: #272f42;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --border: #475569;
+  --hairline: #273349;
+  --input: #475569;
+  --ring: #ffffff;
+
+  --signal-ok: #22c55e; /* 7.7:1 */
+  --signal-warn: #f59e0b; /* 8.3:1, dry run */
+  --signal-info: #38bdf8; /* 8.6:1, sent frames */
+  --signal-error: #ef4444; /* 4.7:1 */
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --font-sans: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -96,21 +70,13 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-hairline: var(--hairline);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-signal-ok: var(--signal-ok);
+  --color-signal-warn: var(--signal-warn);
+  --color-signal-info: var(--signal-info);
+  --color-signal-error: var(--signal-error);
 }
 
 @layer base {
@@ -118,6 +84,26 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-mono text-foreground antialiased;
   }
+  /* Tailwind v4 resets buttons to the default cursor; the checklist wants a pointer. */
+  button:not(:disabled),
+  [role="switch"]:not(:disabled),
+  label[for],
+  input[type="color"] {
+    cursor: pointer;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility glow {
+  /* The style's "minimal glow": only on the title and status lights. */
+  text-shadow: 0 0 10px color-mix(in oklab, currentColor 45%, transparent);
 }

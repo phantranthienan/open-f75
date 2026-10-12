@@ -1,8 +1,8 @@
 import { Download } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/ui/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/ui/components/ui/card'
 import type { Backup } from '@/keyboard'
+import { Pane } from '@/ui/components/pane'
 import type { Session } from '@/ui/hooks/use-session'
 
 function download(backup: Backup): string {
@@ -15,7 +15,7 @@ function download(backup: Backup): string {
   return name
 }
 
-export function BackupCard({ session }: { session: Session }) {
+export function BackupPane({ session, className }: { session: Session; className?: string }) {
   const [status, setStatus] = useState<string | null>(null)
   const canRun = session.connected && !session.busy && session.assessment?.canSend === true
 
@@ -28,22 +28,15 @@ export function BackupCard({ session }: { session: Session }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Backup</CardTitle>
-        <CardDescription>
-          Read before you write. Saves the identity, the 128-byte settings page and the 512-byte colour table as JSON.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">
-        {status ?? 'Run this once before the first real write and keep the file.'}
-      </CardContent>
-      <CardFooter>
-        <Button variant="secondary" disabled={!canRun} onClick={() => void onBackup()}>
-          <Download />
-          Back up config
-        </Button>
-      </CardFooter>
-    </Card>
+    <Pane title="backup" meta="reads only" className={className} bodyClassName="flex flex-col items-start gap-3 text-xs">
+      <p className="text-muted-foreground">
+        Read before you write: saves the identity, the 128-byte settings page and the 512-byte colour table as JSON.
+      </p>
+      <Button variant="secondary" size="sm" disabled={!canRun} onClick={() => void onBackup()}>
+        <Download />
+        Back up config
+      </Button>
+      {status && <p>{status}</p>}
+    </Pane>
   )
 }

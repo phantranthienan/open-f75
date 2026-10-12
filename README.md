@@ -16,6 +16,14 @@ npm run lint       # oxlint + the raw-send rule
 
 WebHID only works in Chromium browsers, on `https` or `localhost`.
 
+## The screen
+
+One screen, like a terminal dashboard: the **device** pane (checks, identity, HID collections), **colour** (a hue/saturation wheel, a hex field and your saved colours), **backup**, and the **packet log** with every frame as hex. A status line at the bottom shows the mode (`DRY RUN` or `LIVE`), the board, and frame counts. From 1024 px wide it fits the window and each pane scrolls on its own; narrower, the panes stack.
+
+Saved colours live in this browser's `localStorage` (newest first, up to 16). The wheel always gives full-value colours: the board has its own brightness, and dark colours make the LEDs look off. Type a hex value for anything else.
+
+The design system comes from the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (Dark Mode (OLED) style, "code dark + run green" palette, JetBrains Mono, dense spacing). Its tokens are in `src/index.css`; the app is dark only.
+
 ## First session with the real board
 
 1. Plug the F75 in by cable and switch it to wired mode. The hardware factory reset is `Fn+Esc`, held.
@@ -23,7 +31,7 @@ WebHID only works in Chromium browsers, on `https` or `localhost`.
 3. The Device card runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If they pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
 4. **Copy JSON** on the Device card and keep it. That is your Phase 0 record.
 5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table.
-6. Pick a colour the board isn't showing (green, say) and click **Dry run**. The app reads for real, then logs the bytes it would change and the frames it would write, without sending them.
+6. Pick a colour the board isn't showing on the wheel (or type `#00ff00`) and click **Dry run**. The app reads for real, then logs the bytes it would change and the frames it would write, without sending them.
 7. Turn dry run off and send a firmware colour such as green. Then unplug and replug to see whether it stays.
 8. Only then try a custom colour (see below).
 
@@ -118,6 +126,7 @@ test/
   static-color/  dry run, firmware colour (one byte), custom colour, no-op, ignored writes
   backup/        the downloaded JSON, reads only
   packet-log/    following new entries, clearing, the newer-Chrome scroll regression
+  color-picker/  the wheel (pointer and keyboard), saved colours in localStorage
 ```
 
 First run: `npx playwright install chromium`, then `npm test`. `npm run test:ui` opens Playwright's UI.
