@@ -11,12 +11,7 @@ export function TopBar({ session }: { session: Session }) {
   const { connected, busy, dryRun, device } = session
 
   return (
-    <header
-      className={cn(
-        'flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card px-4 py-2',
-        !dryRun && connected && 'border-b-signal-error',
-      )}
-    >
+    <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card px-4 py-2">
       <div className="flex min-w-0 items-baseline gap-3">
         <h1 className="glow text-sm font-bold tracking-wide text-primary">
           open-f75<span aria-hidden="true">▍</span>
