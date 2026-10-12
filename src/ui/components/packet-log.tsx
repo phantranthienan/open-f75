@@ -32,10 +32,17 @@ function asText(entries: readonly LogEntry[]): string {
 
 export function PacketLog({ session }: { session: Session }) {
   const { entries } = session
-  const bottom = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
+  // Follow new entries only while the log is scrolled to the bottom.
+  const following = useRef(true)
   const counts = entries.reduce<Partial<Record<LogKind, number>>>((acc, e) => ({ ...acc, [e.kind]: (acc[e.kind] ?? 0) + 1 }), {})
 
-  useEffect(() => bottom.current?.scrollIntoView({ block: 'end' }), [entries])
+  // Block body on purpose: an effect may only return a cleanup function, and
+  // newer Chrome returns a Promise from scroll methods.
+  useEffect(() => {
+    const el = scroller.current
+    if (el && following.current) el.scrollTop = el.scrollHeight
+  }, [entries])
 
   return (
     <Card className="flex min-h-0 flex-col lg:h-[calc(100dvh-7rem)]">
@@ -61,7 +68,14 @@ export function PacketLog({ session }: { session: Session }) {
         </CardAction>
       </CardHeader>
       <CardContent className="min-h-0 flex-1">
-        <div className="h-80 overflow-y-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed lg:h-full">
+        <div
+          ref={scroller}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+          }}
+          className="h-80 overflow-y-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed lg:h-full"
+        >
           {entries.length === 0 ? (
             <p className="text-muted-foreground">Nothing yet. Connect a board or switch on the mock.</p>
           ) : (
@@ -74,7 +88,6 @@ export function PacketLog({ session }: { session: Session }) {
               </div>
             ))
           )}
-          <div ref={bottom} />
         </div>
       </CardContent>
     </Card>
