@@ -9,9 +9,9 @@ A lighting controller for the AULA F75 keyboard, built as a WebHID web app (Vite
 ```sh
 npm install
 npm run dev        # http://localhost:5173, open it in desktop Chrome or Edge
-npm test           # Vitest
+npm test           # end-to-end tests (Playwright)
 npm run build      # typecheck + production build into dist/
-npm run lint       # oxlint
+npm run lint       # oxlint + the raw-send rule
 ```
 
 WebHID only works in Chromium browsers, on `https` or `localhost`. In other browsers, or without the keyboard, switch on **Mock keyboard**.
@@ -44,7 +44,7 @@ A read sends that header, then fetches the reply with GET_FEATURE. A change is a
 
 There are two paths:
 
-- **Firmware colour** (red, green, blue, yellow, magenta, cyan, white). One byte in the settings page. AulaSofwareLinux confirmed it on an F75: pressing `Fn+Tab` moved exactly that byte, and a test here checks the app changes the same byte.
+- **Firmware colour** (red, green, blue, yellow, magenta, cyan, white). One byte in the settings page. AulaSofwareLinux confirmed it on an F75: pressing `Fn+Tab` moved exactly that byte, and an end-to-end test checks the app writes only that byte.
 - **Custom colour.** Also writes the colour table. This is a hypothesis built from the F87's OEM captures: their palette reassembles into rows of 7 colours, and the OEM app put the custom colour in row 1, slot 0. The F75 projects disagree on what `0x0a` holds, so the app only writes the table when your board's own table has exactly that layout. If it doesn't, it refuses and offers the 7 firmware colours.
 
 `src/protocol/` cites a source for every byte.
@@ -56,12 +56,13 @@ src/
   protocol/
     wired.ts          0x06 feature-report framing and commands (the F75 over USB)
     settings.ts       settings page and colour table: offsets, checks, planStaticColor
-    dongle.ts         0x13 20-byte framing (2.4 GHz dongle); not sent by the app, kept for its tests
+    dongle.ts         0x13 20-byte framing (2.4 GHz dongle); never sent, the allowlist refuses it
     ids.ts            USB IDs and model identities
     bytes.ts          hex and colour helpers
   hid-descriptor.ts   HID report descriptor parser (mock today, hidapi later)
   transport.ts        Transport interface: send, receiveFeature, onInput, onDisconnect
-  safe-send.ts        allowlist guard: the only code allowed to call Transport.send
+  allowlist.ts        the five commands that may reach the board
+  safe-send.ts        the guard: allowlist, dry run, hex log; the only caller of Transport.send
   keyboard.ts         identify, read, set static colour (with read-back), backup
   device-check.ts     the checks that gate every send
   log.ts              packet log store
@@ -70,14 +71,18 @@ src/
     mock.ts           fake board speaking the wired protocol
     mock-data.ts      the real F75 descriptor and settings dump it starts from
   ui/                 React app; components/ui holds the shadcn components
-test/golden/          frames from the F87 repo's OEM captures (dongle and wired)
-scripts/pcap-frames.py  turns a USBPcap (Windows) or macOS USB capture into a golden file
+test/                 end-to-end tests, one folder per feature (see Tests)
+scripts/raw-sends.mjs the rule that only the guard may send, used by the build and lint
 references/           reference repos as git submodules
 ```
 
 ## Safety
 
-- Every transfer goes through `safe-send.ts`. Five commands pass: identity read, settings read and write, colour table read and write. Each header field must match, padding must be zero, and writes must carry their `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware and anything unknown are refused. `src/guard.test.ts` fails if any other file calls a raw send.
+- Only five commands can reach the board: identity read, settings read and write, colour table read and write (`src/allowlist.ts`). Each header field must match, padding must be zero, and writes must carry their `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, the dongle's `0x13` reports and anything unknown are refused.
+- That rule is enforced three times:
+  1. **The guard.** All app code sends through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex.
+  2. **The transports.** `webhid.ts` and the mock check the allowlist again right before the hardware call, so code that skips the guard still can't send anything else.
+  3. **The build.** Raw WebHID calls anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, make the module fail to load in `npm run dev`, fail `npm run build` and fail `npm run lint` (`scripts/raw-sends.mjs`).
 - Until the board identifies as an F75, the identity read is the only command sent. The USB IDs `258A:010C` are shared by the F87, F99, H108 and boards from other brands, and OpenRGB disabled some Sinowealth keyboard detectors after reused IDs bricked Redragon boards.
 - Dry run is on at every page load. It blocks writes but lets reads through, so the logged changes are computed from your board's real data.
 - Every write is read back. If a changed byte didn't stick, the app says which.
@@ -92,7 +97,7 @@ references/           reference repos as git submodules
 | `AulaSofwareLinux` | The wired protocol, the settings page, model identities. AULA's own F75 profile is in `assets/devices/f75-fr/device.ini`. | Verified on an F75 and derived from AULA's driver. Small, new project. Its `assets/` also holds OEM `Update.exe` files; never run them. |
 | `OpenRGB` | `Controllers/SinowealthController/SinowealthKeyboard10cController`: identity, F75 LED map, direct (streaming) mode for Phase 5. | Large, code-reviewed project. GPL-2.0-or-later, so use it for facts and don't paste its code. |
 | `OpenAula` | Direct mode on the F75, an F75 key layout. | Matches OpenRGB byte for byte. |
-| `Aula-F87-Controller` | The dongle protocol and the OEM captures behind `test/golden/`. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
+| `Aula-F87-Controller` | The dongle protocol, and the OEM captures the colour-table layout was inferred from. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
 
 Other sources worth knowing: [RustamSheoran/aula-f75](https://github.com/RustamSheoran/aula-f75) (WebHID, same wired framing, a second opinion), [JavaProgswing/aula-f75](https://github.com/JavaProgswing/aula-f75) (the F75 dongle), the [WebHID spec](https://wicg.github.io/webhid/) and [Chrome's WebHID guide](https://developer.chrome.com/docs/capabilities/hid).
 
@@ -104,13 +109,19 @@ Other sources worth knowing: [RustamSheoran/aula-f75](https://github.com/RustamS
 npx shadcn@latest add dialog
 ```
 
-## Golden files
+## Tests
 
-- `test/golden/f87-dongle-fixed-on-{red,green,blue}.json`: an F87 through its 2.4 GHz dongle (`3554:FA09`), from `references/Aula-F87-Controller/captures/macos-host-wireshark-vm/config-changes/`.
-- `test/golden/f87-wired-direct.json`: an F87 over the cable, the OEM app's direct-mode frames, from `captures/windows-npcap-wireshark/raining-silk.pcapng`.
+End-to-end only: Playwright drives the real app in Chromium. Most tests install a fake F75 as `navigator.hid`, so they go through the real WebHID transport and check the exact bytes that reach the board.
 
-None are from an F75. Once you have F75 captures (Windows, USBPcap, the official app), add them the same way:
-
-```sh
-python3 -I scripts/pcap-frames.py my-capture.pcapng > test/golden/f75-fixed-on-red.json
 ```
+test/
+  fixtures/      app.ts (helpers, fails a test on any console error), fake-hid.ts (the fake F75)
+  connect/       identity read, other models and product IDs, reconnect, unplug, no WebHID
+  safety/        the transport refuses everything off the allowlist, even with the guard bypassed
+  static-color/  dry run, firmware colour (one byte), custom colour, no-op, ignored writes
+  backup/        the downloaded JSON, reads only
+  packet-log/    following new entries, clearing, the newer-Chrome scroll regression
+  mock/          the built-in mock keyboard
+```
+
+First run: `npx playwright install chromium`, then `npm test`. `npm run test:ui` opens Playwright's UI.

@@ -70,6 +70,8 @@ export function PacketLog({ session }: { session: Session }) {
       <CardContent className="min-h-0 flex-1">
         <div
           ref={scroller}
+          role="log"
+          aria-label="Packet log entries"
           onScroll={(e) => {
             const el = e.currentTarget
             following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24

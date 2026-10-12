@@ -1,18 +1,19 @@
 /**
  * The 2.4 GHz dongle protocol: 20-byte output reports, report ID 0x13.
- * Pure functions only. The app does not send these (wired mode only while
- * experimenting); they are kept, tested against the OEM captures, because they
- * show the same 128-byte settings page and 512-byte colour table as the wired
- * protocol, split into 14-byte fragments (see the bottom of this file).
+ * Pure functions only. The app does not send these, and the allowlist refuses
+ * report 0x13 (wired mode only). They are kept because they carry the same
+ * 128-byte settings page and 512-byte colour table as the wired protocol,
+ * split into 14-byte fragments (see the bottom of this file), and the mock
+ * builds its colour table from the OEM palette below.
  *
  * Over the cable the F75 uses wired.ts instead: its interface declares no
  * report 0x13 at all (references/AulaSofwareLinux/src/hid.rs, F75 descriptor).
  *
  * Sources, cited as [tag] below:
  *   [F87-DOC]  references/Aula-F87-Controller/docs/PROTOCOL.md
- *   [F87-CAP]  test/golden/f87-dongle-fixed-on-*.json, frames extracted from that
- *              repo's captures of the OEM Windows app (scripts/pcap-frames.py),
- *              recorded through the F87's dongle (3554:FA09)
+ *   [F87-CAP]  that repo's captures of the OEM Windows app, recorded through the
+ *              F87's dongle (3554:FA09): captures/macos-host-wireshark-vm/
+ *              config-changes/1[345]-fixed-on-*.pcapng
  *
  *   [0]     report ID, always 0x13
  *   [1]     command

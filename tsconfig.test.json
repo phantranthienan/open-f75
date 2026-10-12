@@ -2,8 +2,11 @@
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
-    "types": ["vite/client", "w3c-web-hid", "node"]
+    "types": ["vite/client", "w3c-web-hid", "node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@test/*": ["./test/*"]
+    }
   },
-  "include": ["src", "test"],
-  "exclude": []
+  "include": ["src", "test", "playwright.config.ts"]
 }

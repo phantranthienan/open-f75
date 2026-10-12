@@ -4,10 +4,11 @@
  * reads, and keeps what is written, so tests and the UI can check what a real
  * board would show after a replug.
  */
+import { assertAllowed } from '@/allowlist'
 import { parseReportDescriptor } from '@/hid-descriptor'
 import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID } from '@/protocol/ids'
 import { describeBoard, type BoardState } from '@/protocol/settings'
-import { Cmd, DATA_LENGTH, HEADER_LENGTH, INFO_IDENTITY, REPORT_ID, REPORT_LENGTH, parseHeader } from '@/protocol/wired'
+import { Cmd, HEADER_LENGTH, INFO_IDENTITY, REPORT_ID, REPORT_LENGTH, parseHeader } from '@/protocol/wired'
 import type { DeviceInfo, InputReport, ReportType, Transport } from '@/transport'
 import { F75_INTERFACE1_DESCRIPTOR, F75_SETTINGS, F87_COLOR_TABLE } from '@/transports/mock-data'
 
@@ -91,9 +92,7 @@ export class MockTransport implements Transport {
 
   async send(type: ReportType, reportId: number, data: Uint8Array): Promise<void> {
     if (!this.connected) throw new Error('Mock device is not connected')
-    if (type !== 'feature' || reportId !== REPORT_ID || data.length !== DATA_LENGTH) {
-      throw new Error(`Mock does not handle ${type} report ${reportId} with ${data.length} bytes`)
-    }
+    assertAllowed({ type, reportId, data }) // same check as the WebHID transport
     const frame = new Uint8Array(REPORT_LENGTH)
     frame[0] = reportId
     frame.set(data, 1)
@@ -120,7 +119,7 @@ export class MockTransport implements Transport {
         if (!this.options.ignoreWrites) this.colorTable = payload
         break
       default:
-      // a real board would ignore it; the guard never lets one through
+      // unreachable: assertAllowed only lets the five allowlisted commands through
     }
   }
 

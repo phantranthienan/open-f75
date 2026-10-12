@@ -31,7 +31,8 @@ import {
   normalizeReply,
   parseReply,
 } from '@/protocol/wired'
-import { BlockedPacketError, featurePacket, type SafeSend, type SendResult } from '@/safe-send'
+import { BlockedPacketError, featurePacket } from '@/allowlist'
+import type { SafeSend, SendResult } from '@/safe-send'
 import { formatId, type DeviceInfo, type Transport } from '@/transport'
 
 export interface Backup {

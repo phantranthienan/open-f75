@@ -42,6 +42,7 @@ export const F75_SETTINGS = new Uint8Array([
 /**
  * NOT an F75 table: no F75 colour table has been published. This is the
  * OEM app's palette for "Fixed on, red" on an F87, reassembled from its
- * dongle fragments (test/golden/f87-dongle-fixed-on-red.json).
+ * dongle fragments (references/Aula-F87-Controller/captures/macos-host-wireshark-vm/
+ * config-changes/13-fixed-on-color-r255-g0-b0.pcapng).
  */
 export const F87_COLOR_TABLE = colorTableFromPaletteFrames(buildPalette([0xff, 0x00, 0x00]))

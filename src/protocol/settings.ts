@@ -29,7 +29,8 @@
  *   [KBINI]   references/AulaSofwareLinux/assets/devices/f75-fr/device.ini, AULA's F75 profile
  *             (LedOpt1 = Fixed on, Light 0..9, Speed 0..4)
  *   [RS]      github.com/RustamSheoran/aula-f75 README (0x8a/0x0a = 512-byte colour table)
- *   [F87-CAP] test/golden/f87-dongle-fixed-on-*.json
+ *   [F87-CAP] OEM-app captures of an F87 (2.4 GHz dongle), references/Aula-F87-Controller/
+ *             captures/macos-host-wireshark-vm/config-changes/1[345]-fixed-on-*.pcapng
  */
 import { assertRgb, sameBytes, type Rgb } from '@/protocol/bytes'
 

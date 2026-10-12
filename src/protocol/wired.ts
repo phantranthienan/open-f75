@@ -21,8 +21,9 @@
  *          driver (OemDrv.exe) and verified on an F75
  *   [ORGB] references/OpenRGB/Controllers/SinowealthController/SinowealthControllerDetect.cpp,
  *          which sends the same identity request `06 82 01 00 01 00 06`
- *   [CAP]  test/golden/f87-wired-direct.json: the OEM app's 0x08 frames carry
- *          `01 00 7a 01` = 1 package, index 0, length 378 (126 LEDs x 3)
+ *   [CAP]  references/Aula-F87-Controller/captures/windows-npcap-wireshark/raining-silk.pcapng:
+ *          the OEM app's wired 0x08 frames carry `01 00 7a 01` = 1 package,
+ *          index 0, length 378 (126 LEDs x 3)
  */
 import { toHex } from '@/protocol/bytes'
 

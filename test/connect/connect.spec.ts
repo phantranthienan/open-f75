@@ -1,0 +1,63 @@
+import { F87_IDENTITY, connect, connectF75, expect, openWithBoard, sent, test } from '@test/fixtures/app'
+
+test.describe('connecting over WebHID', () => {
+  test('identifies an F75 with a single identity read', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
+
+    const reports = await sent(page)
+    expect(reports).toHaveLength(1)
+    const [identity] = reports
+    expect(identity).toMatchObject({ type: 'feature', reportId: 0x06 })
+    expect(identity.data).toHaveLength(519)
+    // 06 82 01 00 01 00 06 00, as AULA's driver and OpenRGB send it
+    expect(identity.data.slice(0, 7)).toEqual([0x82, 0x01, 0x00, 0x01, 0x00, 0x06, 0x00])
+    expect(identity.data.slice(7).every((b) => b === 0)).toBe(true)
+    // report sizes come from the descriptor items
+    await expect(page.getByRole('cell', { name: '0x06 · 519 B' })).toBeVisible()
+  })
+
+  test('accepts replies that start with the report ID', async ({ page }) => {
+    await openWithBoard(page, { replyWithReportId: true })
+    await connectF75(page)
+  })
+
+  test('sends nothing beyond the identity read to another model', async ({ page }) => {
+    await openWithBoard(page, { identity: F87_IDENTITY })
+    await connect(page)
+
+    await expect(page.getByText('AULA F87. Only the F75 is supported.')).toBeVisible()
+    expect(await sent(page)).toHaveLength(1)
+    await expect(page.getByRole('button', { name: 'Back up config' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dry run' })).toBeDisabled()
+  })
+
+  test('sends nothing at all to a board with another product ID', async ({ page }) => {
+    await openWithBoard(page, { productId: 0xfa09 })
+    await connect(page)
+
+    await expect(page.getByText(/Device reports 0xFA09\. Wireless, another model, or bootloader/)).toBeVisible()
+    expect(await sent(page)).toEqual([])
+  })
+
+  test('reconnects silently to a board granted earlier', async ({ page }) => {
+    await openWithBoard(page, { granted: true })
+    await expect(page.getByText('This is an F75.')).toBeVisible()
+  })
+
+  test('notices when the board is unplugged', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
+    await page.evaluate(() => window.__fakeHid.unplug())
+
+    await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible()
+    await expect(page.getByRole('log')).toContainText('Device disconnected')
+  })
+
+  test('offers the mock keyboard when the browser has no WebHID', async ({ page }) => {
+    await page.addInitScript(() => delete (Navigator.prototype as { hid?: unknown }).hid)
+    await page.goto('/')
+    await expect(page.getByRole('switch', { name: 'Mock keyboard' })).toBeChecked()
+    await expect(page.getByRole('button', { name: 'Connect' })).toBeEnabled()
+  })
+})

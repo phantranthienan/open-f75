@@ -1,7 +1,9 @@
 /**
  * WebHID transport (Chrome/Edge, v1). The only file that touches navigator.hid.
  */
+import { assertAllowed } from '@/allowlist'
 import { AULA_VENDOR_ID } from '@/protocol/ids'
+import { REPORT_ID } from '@/protocol/wired'
 import type {
   CollectionInfo,
   DeviceInfo,
@@ -97,6 +99,9 @@ export class WebHidTransport implements Transport {
   }
 
   async send(type: ReportType, reportId: number, data: Uint8Array): Promise<void> {
+    // Second check, right before the hardware: refuse anything off the allowlist
+    // even if the guard in safe-send.ts was bypassed.
+    assertAllowed({ type, reportId, data })
     const device = this.route(type, reportId)
     const body = Uint8Array.from(data)
     if (type === 'feature') await device.sendFeatureReport(reportId, body)
@@ -104,6 +109,7 @@ export class WebHidTransport implements Transport {
   }
 
   async receiveFeature(reportId: number): Promise<Uint8Array> {
+    if (reportId !== REPORT_ID) throw new Error(`Only feature report 0x06 may be read, not 0x${reportId.toString(16)}`)
     const view = await this.route('feature', reportId).receiveFeatureReport(reportId)
     // Some platforms include the report ID as the first byte; the backup keeps it as is.
     return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength))
