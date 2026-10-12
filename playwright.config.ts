@@ -2,8 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 /**
  * End-to-end tests: the real app in Chromium (WebHID needs it), against a
- * fake F75 installed as navigator.hid (test/fixtures/fake-hid.ts) or the
- * built-in mock keyboard.
+ * fake F75 installed as navigator.hid (test/fixtures/fake-hid.ts).
  *
  * First run: `npx playwright install chromium`. To use a browser that is
  * already installed instead, set CHROMIUM_PATH to its executable.

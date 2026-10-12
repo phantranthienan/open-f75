@@ -1,132 +1,431 @@
 # open-f75
 
-A lighting controller for the AULA F75 keyboard, built as a WebHID web app (Vite, React, TypeScript, shadcn/ui). A Tauri menu-bar app comes later and will reuse this UI.
+A web page that sets the lighting on an AULA F75 keyboard over the USB cable, made for macOS. It is a WebHID app (Vite, React, TypeScript, Tailwind, shadcn/ui) and runs in desktop Chrome or Edge. Later it will also ship as a Tauri menu-bar app that reuses everything except one file, the transport.
 
-**Status:** connects to a real F75 over the cable in Chrome on macOS, identifies it, backs it up and sets a static colour. The wired protocol and the firmware-colour path come from [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), which was verified on an F75; the custom-colour path matches the colour table read off the owner's F75. Dry run is on by default.
+What it does today:
+
+- connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
+- backs up the board's settings page and colour table as JSON
+- sets the "Fixed on" effect to one colour, saved on the board: one of the seven firmware colours, or any colour through the colour table
+- shows every frame as hex in a packet log. Dry run is on whenever the page loads.
+
+Other effects, brightness, speed, per-key colour and the desktop app are not built yet.
+
+## Contents
+
+1. [Run it](#run-it)
+2. [First session with the board](#first-session-with-the-board)
+3. [How it fits together](#how-it-fits-together)
+4. [One colour change, frame by frame](#one-colour-change-frame-by-frame)
+5. [The protocol](#the-protocol)
+6. [Safety](#safety)
+7. [Where to read](#where-to-read)
+8. [File map](#file-map)
+9. [The screen](#the-screen)
+10. [Tests](#tests)
+11. [Tooling and conventions](#tooling-and-conventions)
+12. [Troubleshooting](#troubleshooting)
+13. [Glossary](#glossary)
+14. [Sources and references](#sources-and-references)
 
 ## Run it
 
+You need Node 20.19+ or 22.12+ (what Vite asks for) and desktop Chrome or Edge.
+
 ```sh
 npm install
-npm run dev        # http://localhost:5173, open it in desktop Chrome or Edge
-npm test           # end-to-end tests (Playwright)
+npm run dev        # http://localhost:5173, open it in Chrome or Edge
+npm test           # end-to-end tests (Playwright); starts the dev server itself
 npm run build      # typecheck + production build into dist/
 npm run lint       # oxlint + the raw-send rule
+npm run typecheck  # TypeScript only
 ```
 
-WebHID only works in Chromium browsers, on `https` or `localhost`.
+WebHID only exists in Chromium browsers, and only on `https` or `localhost`. Safari and Firefox don't have it.
 
-## The screen
+The reference projects are git submodules. You only need them to read the sources the code cites: `git submodule update --init` (OpenRGB is a shallow clone, about 60 MB).
 
-One screen, like a terminal dashboard: the **device** pane (checks, identity, HID collections), **colour** (a hue/saturation wheel, a hex field and your saved colours), **backup**, and the **packet log** with every frame as hex. A status line at the bottom shows the mode (`DRY RUN` or `LIVE`), the board, and frame counts. From 1024 px wide it fits the window and each pane scrolls on its own; narrower, the panes stack.
+## First session with the board
 
-Saved colours live in this browser's `localStorage` (newest first, up to 16). The wheel always gives full-value colours: the board has its own brightness, and dark colours make the LEDs look off. Type a hex value for anything else.
+1. Plug the F75 in by cable and switch it to wired mode. Before you start, know the hardware factory reset: hold `Fn+Esc`.
+2. Open the app and press **Connect**, then pick the board in Chrome's prompt. The app never connects on its own, so you do this after every page load. It opens every interface the browser grants. If the checks then say feature report `0x06` is missing, connect again and pick the board's other entry.
+3. The **device** pane runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If all three pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
+4. **Copy JSON** on the device pane and keep it. It is the record of what your board exposes.
+5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table. Do this before the first write.
+6. Pick a colour on the wheel (or type one) and press **Dry run**. The app reads the board for real, then logs the bytes it would change and the frames it would write, without sending them.
+7. Turn dry run off in the top bar and send a colour. Then unplug and replug to check that it stays.
 
-The design system comes from the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (Dark Mode (OLED) style, JetBrains Mono, dense spacing). The colours are three dark terminal themes you switch between in the top bar: [Tokyo Night](https://github.com/folke/tokyonight.nvim) (the default), [Catppuccin Mocha](https://catppuccin.com/palette) and [Rosé Pine](https://rosepinetheme.com/palette). The choice is kept in this browser's `localStorage`. The tokens are in `src/index.css`.
+## How it fits together
 
-## First session with the real board
-
-1. Plug the F75 in by cable and switch it to wired mode. The hardware factory reset is `Fn+Esc`, held.
-2. **Connect** and pick the board. The app never connects on its own, so do this after every page load. It opens every interface the browser grants. If the checks then say feature report `0x06` is missing, connect again and pick the board's other entry.
-3. The Device card runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If they pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
-4. **Copy JSON** on the Device card and keep it. That is your Phase 0 record.
-5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table.
-6. Pick a colour the board isn't showing on the wheel (or type `#00ff00`) and click **Dry run**. The app reads for real, then logs the bytes it would change and the frames it would write, without sending them.
-7. Turn dry run off and send a firmware colour such as green. Then unplug and replug to see whether it stays.
-8. Only then try a custom colour (see below).
-
-## How a colour is set
-
-Over the cable the board takes 520-byte feature reports, report ID `0x06`:
+The code has layers. Each one only talks to the one below it.
 
 ```
-06  cmd  param  00  packages  index  len(lo)  len(hi)  payload… (zero padded to 520)
+ src/ui/                    React: the panes, buttons and log you see
+   │   session.setStaticColor(rgb), session.backup(), session.connect()
+   ▼
+ src/ui/hooks/use-session.ts
+   │   builds the stack below on Connect, owns dry run, holds the packet log
+   ▼
+ src/keyboard.ts            Keyboard: identify, backup, set static colour, read back
+   │   asks src/protocol/ to build frames and to plan changes (pure functions)
+   ▼
+ src/safe-send.ts           the guard: allowlist check, dry run, hex log
+   │   the only caller of transport.send
+   ▼
+ src/transport.ts           the Transport interface
+ src/transports/webhid.ts   its WebHID version: checks the allowlist again, then calls navigator.hid
+   │
+   ▼
+ the F75, feature report 0x06
 ```
 
-A read sends that header, then fetches the reply with GET_FEATURE. A change is a read-modify-write: read the region, patch only the bytes that need changing, write it back, then read it again to check the bytes stuck.
+Five ideas explain most of the code:
 
-| Region | Read | Write | What the app changes |
-| --- | --- | --- | --- |
-| Settings page, 128 bytes, ends `5A A5` | `0x84` | `0x04` | `0x0a` effect = 1 (Fixed on); `0x3b` low nibble = colour 0–6 |
-| Colour table, 512 bytes | `0x8a` | `0x0a` | custom colours only: row 1, slot 0 (offsets 21–23) |
+1. **The protocol is separate from the transport.** Everything in `src/protocol/` is a pure function: bytes in, bytes out, no I/O. Only `src/transports/webhid.ts` touches the hardware. The Tauri app will add a Rust transport behind the same `Transport` interface, and nothing above it changes.
+2. **One guard for every write.** Every frame sent goes through `createSafeSend` in `src/safe-send.ts`. It checks the frame against the allowlist (`src/allowlist.ts`), logs it as hex and, in dry run, holds back writes. Reads still go out in dry run, so a dry run shows what would change on your real board.
+3. **Identity first.** The USB IDs `258A:010C` are shared by several AULA models and boards from other brands. `src/device-check.ts` decides what may be sent: before identification only the identity read, and after it everything else, but only if the board says it is an F75.
+4. **Read, modify, write, read back.** A change never writes bytes from scratch. The app reads the region from the board, changes only the bytes it needs, writes the result back and reads it again to check every changed byte stuck.
+5. **Nothing happens on its own.** No auto-connect, no reconnect, nothing sent until you click.
 
-There are two paths:
+Reads take two steps. A read request is a frame like any other, so it goes through the guard and the log. The reply comes back through `transport.receiveFeature`, which is read-only and refuses any report but `0x06`.
 
-- **Firmware colour** (red, green, blue, yellow, magenta, cyan, white). One byte in the settings page. AulaSofwareLinux confirmed it on an F75: pressing `Fn+Tab` moved exactly that byte, and an end-to-end test checks the app writes only that byte.
-- **Custom colour.** Also writes the colour table. This is a hypothesis built from the F87's OEM captures: their palette reassembles into rows of 7 colours, and the OEM app put the custom colour in row 1, slot 0. The F75 projects disagree on what `0x0a` holds, so the app only writes the table when your board's own table has exactly that layout. If it doesn't, it refuses and offers the 7 firmware colours.
+## One colour change, frame by frame
 
-`src/protocol/` cites a source for every byte.
+This is the packet log for one custom colour, `#ff6600`, in dry run. It was taken against the test board, which holds the owner's real settings and colour table and replies the way Chrome on macOS did. The hex is each frame without its zero padding.
 
-## Layout
+On **Connect**:
 
 ```
-src/
-  protocol/
-    wired.ts          0x06 feature-report framing and commands (the F75 over USB)
-    settings.ts       settings page and colour table: offsets, checks, planStaticColor
-    ids.ts            USB IDs and model identities
-    bytes.ts          hex and colour helpers
-  transport.ts        Transport interface: send, receiveFeature, onInput, onDisconnect
-  allowlist.ts        the five commands that may reach the board
-  safe-send.ts        the guard: allowlist, dry run, hex log; the only caller of Transport.send
-  keyboard.ts         identify, read, set static colour (with read-back), backup
-  device-check.ts     the checks that gate every send
-  log.ts              packet log store
-  transports/
-    webhid.ts         Chrome/Edge; the only file that touches navigator.hid
-  ui/                 React app; components/ui holds the shadcn components
-test/                 end-to-end tests, one folder per feature (see Tests)
-scripts/raw-sends.mjs the rule that only the guard may send, used by the build and lint
-references/           reference repos as git submodules
+INFO  Connected via WebHID: Gaming Keyboard (0x258A:0x010C)
+TX    identity read                    06 82 01 00 01 00 06 00
+RX    reply to 0x82 (14 bytes)         06 82 01 00 01 00 06 00 03 00 00 00 00 cd
+INFO  Identity 03 00 00 00 00 cd: AULA F75
 ```
+
+On **Dry run** (or **Send to keyboard**):
+
+```
+TX    settings read                    06 84 00 00 01 00 80 00
+RX    reply to 0x84 (136 bytes)        06 84 00 00 01 00 80 00 + 128 bytes of settings
+TX    colour table read                06 8a 00 00 01 00 00 02
+RX    reply to 0x8a (520 bytes)        06 8a 00 00 01 00 00 02 + 512 bytes of colour table
+INFO  Plan: custom colour into colour table row 1, slot 0 (unconfirmed path), then select slot 0
+INFO    colour table 0x16: 0xff -> 0x66
+INFO    colour table 0x17: 0xff -> 0x00
+INFO    settings 0x3b: 0x46 -> 0x40
+DRY   colour table write               06 0a 00 00 01 00 00 02 + the patched 512 bytes
+DRY   settings write                   06 04 00 00 01 00 80 00 + the patched 128 bytes
+INFO  Dry run: 2 write(s) logged, none sent
+```
+
+With dry run off, the two `DRY` lines become `TX`. The app then reads both regions again, and either logs `Done: written and read back` or says which byte didn't stick.
+
+The code path behind that one click:
+
+1. `ColorPane.onSend` (`src/ui/components/color-pane.tsx`) calls `session.setStaticColor(rgb)`.
+2. `useSession` (`src/ui/hooks/use-session.ts`) runs it on the `Keyboard`, marks the app busy and turns any error into a message.
+3. `Keyboard.setStaticColor` (`src/keyboard.ts`) reads the settings page and the colour table, then calls `planStaticColor`.
+4. `planStaticColor` (`src/protocol/settings.ts`) returns the patched regions and the list of changed bytes. It does no I/O.
+5. Each write goes through `SafeSend` (`src/safe-send.ts`), then `WebHidTransport.send` (`src/transports/webhid.ts`), then `HIDDevice.sendFeatureReport`.
+6. `Keyboard.verify` reads both regions back and compares.
+
+## The protocol
+
+Everything here is cited byte by byte in the comments of `src/protocol/wired.ts` and `src/protocol/settings.ts`. See [Sources](#sources-and-references) for what the tags like `[ASL]` mean.
+
+### The frame
+
+Over the cable the board takes 520-byte HID feature reports with report ID `0x06`, on a vendor-defined collection (usage page `0xFF00`).
+
+| Byte | Meaning |
+| --- | --- |
+| 0 | report ID, always `0x06` |
+| 1 | command. Reads have the high bit set (`0x84` reads what `0x04` writes) |
+| 2 | parameter, e.g. `0x01` for the identity read |
+| 3 | `0` |
+| 4 | number of packages, `ceil(length / 512)`. Always 1 here |
+| 5 | package index, from 0 |
+| 6–7 | payload length, little endian, at most 512 |
+| 8… | payload, zero padded to 520 bytes |
+
+**A write** is one SET_FEATURE that carries the payload.
+
+**A read** is a SET_FEATURE that carries only the header, whose length field says how much to send back. A GET_FEATURE on report `0x06` then returns the reply: the same header, with the data from byte 8.
+
+Platforms hand the reply over differently. Chrome on macOS returned 14 bytes for the identity reply on a real F75 (report ID, 7 header bytes and 6 data bytes, no padding). `parseReply` therefore accepts the reply with or without the report ID, padded or not. It refuses one that doesn't start with the command it asked for.
+
+AULA's driver waits 20 ms before every transfer and retries failures. The app does the same: 3 attempts, 70 ms apart.
+
+### Commands
+
+| Command | Param | Length | What | Used |
+| --- | --- | --- | --- | --- |
+| `0x82` | `0x01` | 6 | identity read, the model's 6-byte ID | yes |
+| `0x84` | `0` | 128 | settings page read | yes |
+| `0x04` | `0` | 128 | settings page write | yes |
+| `0x8a` | `0` | 512 | colour table read | yes |
+| `0x0a` | `0` | 512 | colour table write | yes |
+
+These five are the whole allowlist. Other commands are known from AULA's driver and are refused on purpose: `0x03`/`0x83` key matrix, `0x05`/`0x85` macros, `0x06`/`0x86` game mode, `0x08` direct LEDs, `0x0b` screen, `0x11` factory reset, `0x87` battery.
+
+### Model identities
+
+The identity read (`0x82`, parameter `0x01`) answers 6 bytes that name the model (`src/protocol/ids.ts`). The F75 is `03 00 00 00 00 cd`. The F87, F87 Pro, F99, F99 Pro and H108 answer different bytes. Only the F75 is ever written to.
+
+### Settings page (128 bytes)
+
+Read with `0x84`, written with `0x04`. It always ends in `5A A5`, and a page without that end marker is treated as a failed read.
+
+| Offset | Meaning | Status |
+| --- | --- | --- |
+| `0x0a` | live effect, as its position in AULA's effect list. `1` = Fixed on | confirmed on an F75 |
+| `0x18` | idle (sleep) timeout. `0x0a` = 300 s in AULA's F75 profile | confirmed on an F75; this app never changes it |
+| `0x38–0x39` | `FF FF` | |
+| `0x3a…` | one 2-byte slot per effect, starting with effect 1: `[brightness, speed << 4 \| colour]` | confirmed with `Fn+Tab` |
+| `0x7e–0x7f` | `5A A5` end marker | |
+
+So Fixed on is the slot at `0x3a`: brightness at `0x3a`, and speed (high nibble) plus colour (low nibble) at `0x3b`. The colour nibble picks one of 7 colours, `0` red, `1` green, `2` blue, `3` yellow, `4` magenta, `5` cyan, `6` white, or `7` for colourful. The owner's board reads `07 46` there: brightness 7, speed 4, colour 6.
+
+### Colour table (512 bytes)
+
+Read with `0x8a`, written with `0x0a`. It is laid out in rows of 7 RGB colours (21 bytes per row, slots in the firmware order above), with `5A A5` at offset 506. Row 1 (offsets 21–41) belongs to Fixed on: the colour nibble picks a slot in that row.
+
+This layout was first inferred from OEM-app captures of an F87. The table read off the owner's F75 has exactly this layout. On that board, row 1 holds white in slot 0, then green, blue, yellow, magenta, cyan and white.
+
+### Setting a colour: the two paths
+
+`planStaticColor` in `src/protocol/settings.ts` decides:
+
+1. **The colour is already in the Fixed-on row.** Only the colour nibble changes, one byte in the settings page, plus the effect byte if the board isn't on Fixed on. AulaSofwareLinux confirmed this on an F75: pressing `Fn+Tab` moved exactly that byte.
+2. **Otherwise**, if the board's own colour table has the expected layout, the colour goes into row 1, slot 0, and the nibble selects slot 0. That is what the OEM app did on the F87. It is less proven on the F75, because the F75 projects disagree about what `0x0a` holds, so the app checks the layout first. On the owner's board slot 0 holds white, so red takes this path too.
+3. **Otherwise** the app refuses and says only the 7 firmware colours are possible.
+
+If the board already shows the colour, nothing is written. If Fixed-on brightness is 0, the app warns that the keys will stay dark.
 
 ## Safety
 
-- Only five commands can reach the board: identity read, settings read and write, colour table read and write (`src/allowlist.ts`). Each header field must match, padding must be zero, and writes must carry their `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, the dongle's `0x13` reports and anything unknown are refused.
-- That rule is enforced three times:
-  1. **The guard.** All app code sends through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex.
-  2. **The transport.** `webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else.
-  3. **The build.** Raw WebHID calls anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, make the module fail to load in `npm run dev`, fail `npm run build` and fail `npm run lint` (`scripts/raw-sends.mjs`).
-- Until the board identifies as an F75, the identity read is the only command sent. The USB IDs `258A:010C` are shared by the F87, F99, H108 and boards from other brands, and OpenRGB disabled some Sinowealth keyboard detectors after reused IDs bricked Redragon boards.
-- Dry run is on at every page load. It blocks writes but lets reads through, so the logged changes are computed from your board's real data.
-- Every write is read back. If a changed byte didn't stick, the app says which.
-- Every frame is logged as hex before it goes out, without the zero padding.
+The only real risk to a keyboard is firmware. Everything here is meant to make the worst realistic outcome a factory reset.
 
-## References
+- **Five commands only.** `src/allowlist.ts` lists them, and every header field must match exactly: command, parameter, one package, index 0, length. The padding must be zero, and a write must carry its region's `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, update and boot commands, the dongle's `0x13` reports and anything unknown are refused.
+- **The rule is enforced three times:**
+  1. **The guard.** App code sends only through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex. A refused frame shows as a `BLOCK` line in the log.
+  2. **The transport.** `src/transports/webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else. It also only routes a report to an interface that declares it.
+  3. **The build.** A raw WebHID call anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, breaks the build. The module fails to load in `npm run dev`, and `npm run build` and `npm run lint` fail (`scripts/raw-sends.mjs`).
+- **Identity gate.** Until the board identifies as an F75, the identity read is the only command sent. If the product ID isn't the wired F75's, nothing at all is sent. A board that reappears with a different product ID may be in its bootloader: send nothing, unplug, wait, replug.
+- **Dry run is on at every page load.** It blocks writes but lets reads through.
+- **Read before write.** Back up first. Every change is read-modify-write from the board's own bytes, and every write is read back.
+- **Wired mode only, and don't unplug mid-write.** The status line says so whenever dry run is off.
+- **No new commands without a source.** A command only joins the allowlist with a source for its bytes, and the code cites it.
 
-`git submodule update --init` fetches them. OpenRGB is a shallow clone (about 60 MB).
+## Where to read
 
-| Submodule | Use it for | Notes |
-| --- | --- | --- |
-| `AulaSofwareLinux` | The wired protocol, the settings page, model identities. AULA's own F75 profile is in `assets/devices/f75-fr/device.ini`. | Verified on an F75 and derived from AULA's driver. Small, new project. Its `assets/` also holds OEM `Update.exe` files; never run them. |
-| `OpenRGB` | `Controllers/SinowealthController/SinowealthKeyboard10cController`: identity, F75 LED map, direct (streaming) mode for Phase 5. | Large, code-reviewed project. GPL-2.0-or-later, so use it for facts and don't paste its code. |
-| `OpenAula` | Direct mode on the F75, an F75 key layout. | Matches OpenRGB byte for byte. |
-| `Aula-F87-Controller` | The 2.4 GHz dongle protocol, and the OEM captures the colour-table layout was first inferred from. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
+### In order, to understand the whole thing
 
-Other sources worth knowing: [RustamSheoran/aula-f75](https://github.com/RustamSheoran/aula-f75) (WebHID, same wired framing, a second opinion), [JavaProgswing/aula-f75](https://github.com/JavaProgswing/aula-f75) (the F75 dongle), the [WebHID spec](https://wicg.github.io/webhid/) and [Chrome's WebHID guide](https://developer.chrome.com/docs/capabilities/hid).
+Read in this order. Each step builds on the one before. The line counts are rough.
 
-## Adding shadcn components
+1. **`src/protocol/wired.ts`** (~140 lines): the frame. Start with the comment at the top, which has the byte layout and its sources. Then read `buildReadRequest`, `buildWrite` and `parseReply`, whose comment explains why short replies are accepted.
+2. **`src/protocol/settings.ts`** (~230): what the board stores. The top comment maps both regions. Then read `planStaticColor` at the bottom: the whole colour decision in one pure function. `describeBoard` decodes what the board currently shows; the UI doesn't use it yet.
+3. **`src/protocol/ids.ts`** (~45): why the USB IDs aren't enough, and the identity bytes of each model.
+4. **`src/allowlist.ts`** (~125): `RULES` and `inspect()`, exactly what may be sent and why a frame is refused.
+5. **`src/safe-send.ts`** (~45): the guard. It's short; read all of it.
+6. **`src/device-check.ts`** (~100): the four checks, `canIdentify` versus `canSend`, and the "blocked" messages the device pane shows.
+7. **`src/keyboard.ts`** (~275): the operations. Read `identify()`, `setStaticColor()` and `backup()`, then the private helpers `query`, `transfer` and `verify` at the bottom.
+8. **`src/transport.ts`** (~75), then **`src/transports/webhid.ts`** (~155): the hardware edge. It opens every interface of the board, sends each report to the interface that declares it, and makes the second allowlist check.
+9. **`src/ui/hooks/use-session.ts`** (~135): how the UI wires all of the above together. It covers Connect, the dry-run ref the guard reads, and the log store.
+10. **`src/ui/App.tsx`** and **`src/ui/components/`**: the screen. Start from `App.tsx` for the grid, then the pane you care about.
+11. **`test/fixtures/fake-hid.ts`**, then any spec in `test/`. The test names say in plain English what the app promises.
 
-`components.json` uses the new-york style and puts components in `src/ui/components/ui`:
+### By question
 
-```sh
-npx shadcn@latest add dialog
+| Question | Where |
+| --- | --- |
+| Why is this byte this value? | the source tags in the comments of `src/protocol/*.ts`; [Sources](#sources-and-references) |
+| What exactly can the app send? | `src/allowlist.ts` |
+| Why did the app refuse to send? | the device pane and `src/device-check.ts`; `BLOCK` lines in the log and `inspect()` in `src/allowlist.ts` |
+| How does a colour become bytes? | `planStaticColor` in `src/protocol/settings.ts` |
+| What happens when I click Send? | `color-pane.tsx` → `use-session.ts` → `Keyboard.setStaticColor` ([walkthrough](#one-colour-change-frame-by-frame)) |
+| How does dry run work? | `src/safe-send.ts`, and `dryRunRef` in `src/ui/hooks/use-session.ts` |
+| How does the build stop raw sends? | `scripts/raw-sends.mjs`, used by `vite.config.ts` and `npm run lint` |
+| What is in the backup file? | `Backup` and `backup()` in `src/keyboard.ts`; `src/ui/components/backup-pane.tsx` |
+| What does the owner's board actually hold? | `test/fixtures/f75.ts` (identity, settings page and colour table from a real backup) |
+| How do tests fake the keyboard? | `test/fixtures/fake-hid.ts` and `test/fixtures/app.ts` |
+| How do I change the app's colours? | the theme blocks in `src/index.css`; `src/ui/hooks/use-theme.ts` |
+| How do I add a pane or control? | `src/ui/components/pane.tsx` and the grid in `src/ui/App.tsx` |
+| How would a desktop version plug in? | `src/transport.ts`: a new class implementing `Transport` |
+
+## File map
+
 ```
+src/
+  main.tsx                 entry: loads the CSS and renders the app
+  index.css                Tailwind, the three themes (CSS variables), base styles
+  protocol/                pure functions, no I/O
+    wired.ts               0x06 framing: build requests and writes, parse replies
+    settings.ts            settings page and colour table: offsets, checks, planStaticColor
+    ids.ts                 USB IDs and the 6-byte model identities
+    bytes.ts               hex and RGB helpers
+  allowlist.ts             the five commands that may reach the board; inspect() and assertAllowed()
+  safe-send.ts             the guard: allowlist, dry run, hex log. The only caller of Transport.send
+  device-check.ts          the checks that gate every send (shown in the device pane)
+  keyboard.ts              identify, backup, set static colour, read back; retries and delays
+  log.ts                   the packet log store (framework-free)
+  transport.ts             the Transport interface and device description types
+  transports/
+    webhid.ts              WebHID for Chrome/Edge. The only file that touches navigator.hid
+  ui/
+    App.tsx                the one-screen layout: top bar, four panes, status line
+    hooks/
+      use-session.ts       wires transport, guard, keyboard and log for the UI
+      use-saved-colors.ts  saved colours in localStorage
+      use-theme.ts         the theme, in localStorage, applied to <html data-theme>
+    components/
+      top-bar.tsx          title, connection light, theme switcher, dry-run switch, Connect
+      device-pane.tsx      checks, identity, HID collections, Copy JSON
+      color-pane.tsx       wheel, hex, saved colours, Dry run / Send to keyboard
+      color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
+      backup-pane.tsx      Back up config, downloads the JSON
+      log-pane.tsx         the packet log: follows new lines, copy, clear
+      status-line.tsx      DRY RUN / LIVE, the board, frame counts
+      pane.tsx             the bordered box with its title in the border
+      ui/                  shadcn components (button, input, label, switch, table)
+    lib/
+      color.ts             HSV <-> RGB for the wheel
+      utils.ts             cn(), the class-name helper shadcn uses
+test/                      end-to-end tests, one folder per feature (see Tests)
+scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
+references/                the reference projects, as git submodules
+index.html                 the page, plus the small script that applies the saved theme before paint
+vite.config.ts             React, Tailwind, the '@' alias and the raw-send check
+playwright.config.ts       Chromium, the dev server on port 5173, CHROMIUM_PATH
+tsconfig.*.json            app (src), node (config and scripts), test (src + test)
+.oxlintrc.json             lint rules, including "import with @/, not ./"
+components.json            shadcn settings (new-york style, paths under src/ui)
+CLAUDE.md                  working rules for AI assistants in this repo
+```
+
+## The screen
+
+One screen, laid out like a terminal dashboard:
+
+- **Top bar:** the name, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
+- **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
+- **colour:** the wheel, a swatch, the hex field and its RGB value. Then your saved colours, a line saying which path the colour will probably take, and **Dry run** or **Send to keyboard**. That button is amber while dry run is on.
+- **backup:** **Back up config**. It only reads.
+- **packet log:** every frame and status line with a time stamp. `TX` sent, `RX` received, `DRY` held back by dry run, `BLOCK` refused by the allowlist, `ERR` and `INFO`. Frames longer than 48 bytes fold to a preview; click to see all of them. The log follows new lines while you're at the bottom and stays put when you scroll up. Use the icons for **Copy log** and **Clear log**.
+- **Status line:** `DRY RUN` or `LIVE`, the board's model, idle or working, and counts of tx, rx, dry and blocked frames.
+
+From 1024 px wide everything fits the window and each pane scrolls on its own. Narrower, the panes stack.
+
+**The colour wheel** sets hue around the ring (red at the top, clockwise) and saturation from the centre (white) to the edge. Value is always full: the board has its own brightness, and dark colours only make the LEDs look off. Type a hex value for anything else. From the keyboard, focus the wheel: ←/→ change the hue by 5°, ↑/↓ change saturation by 5%, Shift triples the step, and Home goes to white.
+
+**Saved colours** live in this browser's `localStorage` (key `open-f75:saved-colors`), newest first, up to 16. Click one to use it, or × to remove it.
+
+**Themes:** three dark terminal themes, switched with the swatches in the top bar: [Tokyo Night](https://github.com/folke/tokyonight.nvim) (the default), [Catppuccin Mocha](https://catppuccin.com/palette) and [Rosé Pine](https://rosepinetheme.com/palette). The choice is kept in `localStorage` (key `open-f75:theme`). Each theme is a block of CSS variables in `src/index.css`, keyed on `data-theme`. The script in `index.html` sets that attribute before the first paint, so a reload doesn't flash. Every text colour pair reaches 4.5:1 contrast.
+
+The design system comes from the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill: Dark Mode (OLED) style, JetBrains Mono, dense spacing. On touch screens the small buttons grow to 44 px, and animations stop when the system asks for reduced motion.
 
 ## Tests
 
-End-to-end only: Playwright drives the real app in Chromium with a fake F75 installed as `navigator.hid`, so every test goes through the real WebHID transport and checks the exact bytes that reach the board. Test doubles live only in `test/`; `src/` is the app.
+The tests are end-to-end only. Playwright drives the real app in Chromium with a fake F75 installed as `navigator.hid`. Every test goes through the real WebHID transport, guard and keyboard code, and checks the exact bytes that cross the HID boundary. Test doubles live only in `test/`; `src/` is only the app.
 
 ```
 test/
-  fixtures/      app.ts (helpers, fails a test on any console error), fake-hid.ts (the fake F75),
-                 f75.ts (identity, settings page and colour table from the owner's F75)
-  connect/       identity read, reply formats, other models and product IDs, no auto-connect, unplug, no WebHID
-  safety/        the transport refuses everything off the allowlist, even with the guard bypassed
-  static-color/  dry run, firmware colour (one byte), custom colour, no-op, ignored writes
-  backup/        the downloaded JSON, reads only
-  packet-log/    following new entries, clearing, the newer-Chrome scroll regression
-  color-picker/  the wheel (pointer and keyboard), saved colours in localStorage
+  fixtures/
+    app.ts           helpers (openWithBoard, connectF75, sendColor, sent, boardState...).
+                     Fails any test that logs a console error or throws.
+    fake-hid.ts      the fake F75: answers the 0x06 reads, keeps what is written,
+                     records every report sent (window.__fakeHid)
+    f75.ts           identity, settings page and colour table from the owner's real F75
+  connect/           identity read, reply formats, other models and product IDs,
+                     no auto-connect, unplug, no WebHID
+  safety/            the transport refuses everything off the allowlist, even with the guard bypassed
+  static-color/      dry run, firmware colour (one byte), custom colour, no-op,
+                     a board that ignores writes, a colour table with another layout
+  backup/            the downloaded JSON, reads only; not offered for another model
+  packet-log/        following new entries, clearing, the newer-Chrome scroll regression
+  color-picker/      the wheel (pointer and keyboard), saved colours in localStorage
+  theme/             default, switching, reload, the pre-paint script, blocked storage
 ```
 
-First run: `npx playwright install chromium`, then `npm test`. `npm run test:ui` opens Playwright's UI.
+The fake board can be set up per test (`openWithBoard(page, { ... })`):
+
+- `identity`: another model's bytes, or `null` for no answer
+- `productId`: e.g. a wireless or bootloader ID
+- `replyFormat`: how GET_FEATURE replies arrive. `short-with-id` is the default, what Chrome on macOS did; the others are `short`, `full` and `full-with-id`.
+- `ignoreWrites`: accepts writes but keeps the old bytes
+- `granted`: pretends the board was granted in an earlier visit, to prove the app still doesn't open it on its own
+
+Running them:
+
+```sh
+npx playwright install chromium   # first run only
+npm test                          # all of them; starts the dev server on port 5173
+npx playwright test test/theme    # one folder
+npm run test:ui                   # Playwright's UI, to watch and step through
+CHROMIUM_PATH=/path/to/chromium npm test   # use a browser that is already installed
+```
+
+## Tooling and conventions
+
+- **Imports** use `@/` for `src/` and `@test/` for `test/`, never `./` or `../`. oxlint enforces it (`.oxlintrc.json`). The aliases are set in `tsconfig*.json` and `vite.config.ts`.
+- **The raw-send rule** lives in `scripts/raw-sends.mjs`. `vite.config.ts` runs it on every module it loads, and `npm run lint` runs it on all of `src/`. It is a text check, so it can be dodged on purpose; the transport's allowlist check is the runtime net.
+- **TypeScript** uses project references: `tsconfig.app.json` (the app, `src/`), `tsconfig.node.json` (`vite.config.ts` and the script) and `tsconfig.test.json` (`src/` and `test/`).
+- **Styling** is Tailwind v4 with theme tokens as CSS variables in `src/index.css`. A new token goes in all three theme blocks.
+- **shadcn components** go in `src/ui/components/ui` (`components.json`, new-york style). To add one, run `npx shadcn@latest add dialog`.
+- **Working rules** are in `CLAUDE.md`: commit to `main`, end-to-end tests only, nothing reaches the keyboard except through the guard, connect only on a click, and run `npm run lint`, `npm run build` and `npm test` before pushing.
+
+## Troubleshooting
+
+| What you see | What it means, what to do |
+| --- | --- |
+| "WebHID is not available in this browser" | Use desktop Chrome or Edge, on `localhost` or `https`. |
+| The chooser lists the board twice, or the check for feature report `0x06` fails | Browsers can list each USB interface as its own entry. Connect again and pick the other one. |
+| The product ID check fails | The board is wireless, another model, or in its bootloader. The app sends nothing. Unplug, wait, replug in wired mode. |
+| "Identity read failed" | The app sends nothing else. The `RX` line in the log shows the raw reply. Disconnect and connect again to retry. |
+| "This board identifies as AULA F87…" (or another model) | Only the F75 is supported, so nothing beyond the identity read is sent. |
+| "The board did not keep the write: …" | The board took the write, but the read-back shows the old byte. Nothing more is sent. Take a backup and compare. |
+| "Custom colours need the board's colour table in the expected layout" | Your table differs from the expected rows of 7 colours. Only the seven firmware colours are possible; a backup of the table would help work out why. |
+| "Fixed on brightness is 0" | The keys will stay dark whatever the colour. |
+| The light goes off after a while | Probably the board's own idle timer (settings byte `0x18`). The owner's board reads `0x0a`, which AULA's F75 profile maps to 300 s. A keypress should wake it. The app never changes that byte. |
+| The board stops typing or acts strangely | Send nothing, unplug, wait, replug. If it stays wrong, hold `Fn+Esc` for the factory reset. |
+
+## Glossary
+
+- **HID**: Human Interface Device, the USB class keyboards and mice use. Data moves in *reports*.
+- **Report ID**: the first byte that says which report this is. The F75's command channel is report `0x06`.
+- **Input / output / feature report**: input goes from the device to the host (key presses), output from the host to the device, and feature both ways on request. The F75's lighting uses feature reports.
+- **SET_FEATURE / GET_FEATURE**: send or fetch a feature report. In WebHID these are `sendFeatureReport` and `receiveFeatureReport`.
+- **Collection, usage page, usage**: how a HID descriptor groups reports and says what they are for. Usage page `0xFF00` and up means vendor-defined, here AULA's command channel.
+- **Interface**: one function of a USB device. The F75 has several (keyboard, media keys, the vendor channel). A browser may list each one as a separate entry.
+- **VID / PID**: USB vendor and product IDs. `258A` is Sinowealth, the chip maker many keyboard brands use, which is why the IDs don't identify the model.
+- **Identity**: the 6 bytes the board answers to command `0x82`, parameter `0x01`. They name the model.
+- **Settings page / colour table**: the two regions of the board's memory this app reads and writes. Both are saved on the board and survive a replug.
+- **Fixed on**: AULA's name for the single-colour effect, effect 1.
+- **Firmware colour / custom colour**: one of the 7 colours selected by the colour nibble, or any RGB value written into the colour table.
+- **Dry run**: writes are logged but not sent; reads still go out.
+- **Read-modify-write**: read a region, change only the bytes needed, write it back.
+- **`5A A5`**: the end marker both regions carry. Its absence means a bad read or a bad frame.
+
+## Sources and references
+
+The comments in `src/protocol/` tag each fact with its source:
+
+| Tag | Source |
+| --- | --- |
+| `[ASL]` | [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), `src/proto.rs` and `src/config_page.rs`. Recovered from AULA's own driver and verified on an F75. |
+| `[KBINI]` | AULA's own F75 profile, `references/AulaSofwareLinux/assets/devices/f75-fr/device.ini` |
+| `[ORGB]` | OpenRGB's Sinowealth controller: same identity request, model byte `0xCD` = AULA F75 |
+| `[CAP]`, `[F87-CAP]` | OEM-app captures of an F87 in `references/Aula-F87-Controller/captures/` |
+| `[RS]` | [RustamSheoran/aula-f75](https://github.com/RustamSheoran/aula-f75): `0x8a`/`0x0a` is a 512-byte colour table |
+| `[OWNER]` | a backup of the owner's F75 taken with this app (`test/fixtures/f75.ts`) |
+
+The submodules in `references/`:
+
+| Submodule | Use it for | Notes |
+| --- | --- | --- |
+| `AulaSofwareLinux` | The wired protocol, the settings page, model identities. AULA's F75 profile is in `assets/devices/f75-fr/device.ini`. | Verified on an F75 and derived from AULA's driver. Small, new project. Its `assets/` also holds OEM `Update.exe` files: never run them. |
+| `OpenRGB` | `Controllers/SinowealthController/SinowealthKeyboard10cController`: identity, the F75 LED map, direct (streaming) mode for host-driven effects. | Large, code-reviewed project. GPL-2.0-or-later, so use it for facts and don't paste its code. |
+| `OpenAula` | Direct mode on the F75, an F75 key layout. | Matches OpenRGB byte for byte. |
+| `Aula-F87-Controller` | The 2.4 GHz dongle protocol, and the OEM captures the colour-table layout was first inferred from. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
+
+Also worth knowing: [JavaProgswing/aula-f75](https://github.com/JavaProgswing/aula-f75) (the F75's dongle), the [WebHID spec](https://wicg.github.io/webhid/) and [Chrome's WebHID guide](https://developer.chrome.com/docs/capabilities/hid).
