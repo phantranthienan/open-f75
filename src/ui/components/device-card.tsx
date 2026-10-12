@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Copy, Usb } from 'lucide-react'
+import { CircleCheck, CircleDashed, CircleX, Copy, Usb } from 'lucide-react'
 import { Button } from '@/ui/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/components/ui/table'
@@ -58,6 +58,8 @@ export function DeviceCard({ session }: { session: Session }) {
                 <li key={check.label} className="flex gap-2">
                   {check.ok ? (
                     <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  ) : check.pending ? (
+                    <CircleDashed className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   ) : (
                     <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" />
                   )}
@@ -69,9 +71,11 @@ export function DeviceCard({ session }: { session: Session }) {
               ))}
             </ul>
 
-            {!assessment.canSend && (
+            {assessment.checks.some((c) => !c.ok && !c.pending) && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                A check failed, so the app will not send anything to this device.
+                {assessment.canIdentify
+                  ? 'This board is not an F75, so the app sends it nothing beyond the identity read.'
+                  : 'A check failed, so the app will not send anything to this device.'}
               </p>
             )}
 

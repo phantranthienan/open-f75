@@ -4,3 +4,10 @@
 [submodule "references/OpenAula"]
 	path = references/OpenAula
 	url = https://github.com/cvsqwe/OpenAula
+[submodule "references/OpenRGB"]
+	path = references/OpenRGB
+	url = https://gitlab.com/CalcProgrammer1/OpenRGB.git
+	shallow = true
+[submodule "references/AulaSofwareLinux"]
+	path = references/AulaSofwareLinux
+	url = https://github.com/yhuikzdtguioaert/AulaSofwareLinux

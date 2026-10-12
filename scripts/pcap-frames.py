@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Extract AULA 20-byte HID frames (report ID 0x13) from a USB pcapng capture.
+"""Extract AULA HID frames from a USB pcapng capture.
+
+Two framings are recognised:
+  0x06  520-byte feature reports, the wired protocol (SET_REPORT = tx, GET_REPORT = rx)
+  0x13  20-byte output/input reports, the 2.4 GHz dongle protocol
 
 Prints one JSON object per capture: {"source": ..., "frames": [{"dir": "tx"|"rx", "hex": ...}]}.
 Use it to turn your own captures into golden files for the Vitest suite.
@@ -17,8 +21,8 @@ import sys
 
 LINKTYPE_USBPCAP = 249
 LINKTYPE_USB_DARWIN = 266
-REPORT_ID = 0x13
-FRAME_LEN = 20
+# report ID -> frame length including the report ID
+FRAMES = {0x06: 520, 0x13: 20}
 SET_REPORT_SETUP = bytes([0x21, 0x09])
 
 
@@ -56,9 +60,9 @@ def frames(path):
     for link, pkt in packets(path):
         endpoint, payload = split(link, pkt)
         # A SET_REPORT setup stage may carry the data stage right after the 8 setup bytes.
-        if payload[:2] == SET_REPORT_SETUP and len(payload) == 8 + FRAME_LEN:
+        if payload[:2] == SET_REPORT_SETUP and len(payload) - 8 in FRAMES.values():
             payload = payload[8:]
-        if len(payload) != FRAME_LEN or payload[0] != REPORT_ID:
+        if not payload or FRAMES.get(payload[0]) != len(payload):
             continue
         out.append({"dir": "rx" if endpoint & 0x80 else "tx", "hex": payload.hex()})
     return out

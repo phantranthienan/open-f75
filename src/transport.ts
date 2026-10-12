@@ -1,7 +1,7 @@
 /**
  * The seam between the protocol and the hardware. WebHID implements it today
  * (transports/webhid.ts); a Tauri + hidapi version can replace it later
- * without touching protocol.ts, safe-send.ts, keyboard.ts or the UI.
+ * without touching protocol/, safe-send.ts, keyboard.ts or the UI.
  */
 
 export type ReportType = 'output' | 'feature'

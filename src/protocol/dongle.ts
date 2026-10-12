@@ -1,40 +1,41 @@
 /**
- * AULA keyboard HID protocol. Pure functions only: no I/O, no globals.
+ * The 2.4 GHz dongle protocol: 20-byte output reports, report ID 0x13.
+ * Pure functions only. The app does not send these (wired mode only while
+ * experimenting); they are kept, tested against the OEM captures, because they
+ * show the same 128-byte settings page and 512-byte colour table as the wired
+ * protocol, split into 14-byte fragments (see the bottom of this file).
  *
- * STATUS: nothing in this file is confirmed on an F75 yet. Everything comes
- * from the AULA F87, which reports the same VID:PID (258A:010C) as the F75.
+ * Over the cable the F75 uses wired.ts instead: its interface declares no
+ * report 0x13 at all (references/AulaSofwareLinux/src/hid.rs, F75 descriptor).
+ *
  * Sources, cited as [tag] below:
  *   [F87-DOC]  references/Aula-F87-Controller/docs/PROTOCOL.md
- *   [F87-CAP]  test/golden/f87-fixed-on-*.json, frames extracted from that
- *              repo's captures of the OEM Windows app (scripts/pcap-frames.py)
- *
- * The board is configured with 20-byte output reports:
+ *   [F87-CAP]  test/golden/f87-dongle-fixed-on-*.json, frames extracted from that
+ *              repo's captures of the OEM Windows app (scripts/pcap-frames.py),
+ *              recorded through the F87's dongle (3554:FA09)
  *
  *   [0]     report ID, always 0x13
  *   [1]     command
  *   [2]     sub-command
  *   [3]     sequence number within a multi-frame message
- *   [4..18] 15-byte payload; payload[0] looks like a data length (0x0E = 14)
+ *   [4..18] 15-byte payload; payload[0] is the data length (0x0E = 14)
  *   [19]    checksum = sum of bytes 0..18, mod 256
  *
- * Setting a colour that survives a replug is a read-modify-write, not one
- * packet [F87-DOC "Effect Change Sequence"]:
+ * A colour that survives a replug is a read-modify-write [F87-DOC]:
  *
  *   1. read config     1 frame out, 10 frames back
  *   2. write config   10 frames, each echoed
  *   3. write palette  37 frames, each echoed
  *   4. save            1 frame, echoed
- *
- * That is why the roadmap's buildStaticColorPacket(r, g, b) became
- * buildStaticColorFrames(config, rgb): it needs the board's current config.
  */
-
-export const AULA_VENDOR_ID = 0x258a
-export const F75_WIRED_PRODUCT_ID = 0x010c // [F87-DOC] wired; OpenAula uses the same pair for the F75
+import { assertRgb, toHex, type Rgb } from './bytes'
+import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH } from './settings'
 
 export const REPORT_ID = 0x13
 export const FRAME_LENGTH = 20 // including the report ID byte
 export const PAYLOAD_LENGTH = 15
+/** Data bytes per fragment after the length byte. */
+const FRAGMENT_DATA = 14
 
 export const Cmd = {
   ReadConfig: 0x44,
@@ -56,8 +57,6 @@ export const PALETTE_FRAME_COUNT = 37
 export const Effect = {
   FixedOn: 1,
 } as const
-
-export type Rgb = readonly [r: number, g: number, b: number]
 
 // ── Frames ──────────────────────────────────────────────────────────────
 
@@ -192,17 +191,18 @@ const PALETTE_TEMPLATE: readonly (readonly number[])[] = (() => {
   return frames
 })()
 
-/** The custom colour slot: palette frame 1, payload bytes 8..10, flag at 12 [F87-CAP]. */
-const CUSTOM_COLOR_SLOT = { frame: 1, rgb: 8, active: 12 } as const
+/**
+ * The custom colour slot: palette frame 1, payload bytes 8..10 [F87-CAP].
+ * [F87-DOC] calls payload byte 12 an "active flag"; reassembled into the colour
+ * table it is the green byte of the next slot, so it is left as the template has it.
+ */
+const CUSTOM_COLOR_SLOT = { frame: 1, rgb: 8 } as const
 
 export function buildPalette(rgb: Rgb): Uint8Array[] {
   assertRgb(rgb)
   return PALETTE_TEMPLATE.map((template, seq) => {
     const payload = Uint8Array.from(template)
-    if (seq === CUSTOM_COLOR_SLOT.frame) {
-      payload.set(rgb, CUSTOM_COLOR_SLOT.rgb)
-      payload[CUSTOM_COLOR_SLOT.active] = 0xff
-    }
+    if (seq === CUSTOM_COLOR_SLOT.frame) payload.set(rgb, CUSTOM_COLOR_SLOT.rgb)
     return buildFrame(Cmd.WritePalette, Sub.Palette, seq, payload)
   })
 }
@@ -221,30 +221,31 @@ export function buildStaticColorFrames(config: readonly Uint8Array[], rgb: Rgb):
   return [...buildStaticColorConfig(config), ...buildPalette(rgb), buildSave()]
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────
+// ── Same data as the wired protocol ─────────────────────────────────────
 
-export function assertRgb(rgb: Rgb): void {
-  if (rgb.length !== 3 || rgb.some((c) => !Number.isInteger(c) || c < 0 || c > 255)) {
-    throw new RangeError(`not an RGB triple: ${JSON.stringify(rgb)}`)
+/** Joins the data bytes of consecutive fragments, using each fragment's length byte. */
+function reassemble(frames: readonly Uint8Array[], length: number): Uint8Array {
+  const out = new Uint8Array(length)
+  let at = 0
+  for (const frame of frames) {
+    const data = frame.subarray(5, 5 + Math.min(frame[4], FRAGMENT_DATA))
+    out.set(data.subarray(0, Math.max(0, length - at)), at)
+    at += data.length
   }
+  if (at !== length) throw new Error(`fragments carry ${at} bytes, expected ${length}`)
+  return out
 }
 
-export function toHex(bytes: ArrayLike<number>, separator = ' '): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(separator)
+/** The 10 config fragments as the 128-byte settings page that wired.ts reads with 0x84. */
+export function settingsFromConfigFrames(config: readonly Uint8Array[]): Uint8Array {
+  assertConfig(config)
+  return reassemble(config, SETTINGS_LENGTH)
 }
 
-export function fromHex(hex: string): Uint8Array {
-  const clean = hex.replace(/[\s:]/g, '')
-  if (!/^(?:[0-9a-f]{2})*$/i.test(clean)) throw new Error(`not a hex string: ${hex}`)
-  return Uint8Array.from(clean.match(/../g) ?? [], (byte) => parseInt(byte, 16))
-}
-
-export function parseHexColor(color: string): Rgb {
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color.trim())
-  if (!m) throw new Error(`not a #rrggbb colour: ${color}`)
-  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)]
-}
-
-export function formatHexColor([r, g, b]: Rgb): string {
-  return `#${toHex([r, g, b], '')}`
+/** The 37 palette fragments as the 512-byte colour table that wired.ts reads with 0x8a. */
+export function colorTableFromPaletteFrames(palette: readonly Uint8Array[]): Uint8Array {
+  if (palette.length !== PALETTE_FRAME_COUNT || !palette.every(isValidFrame)) {
+    throw new Error(`expected ${PALETTE_FRAME_COUNT} valid palette frames`)
+  }
+  return reassemble(palette, COLOR_TABLE_LENGTH)
 }

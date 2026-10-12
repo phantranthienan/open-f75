@@ -1,42 +1,62 @@
 /**
- * Keyboard operations, transport-agnostic. Every write goes through SafeSend,
- * every write waits for its echo, and the first missing echo aborts the rest.
+ * Keyboard operations over the wired protocol, transport-agnostic.
+ *
+ * Every transfer goes through SafeSend. Nothing beyond the identity read is
+ * sent until the board identifies as an F75. Changes are read-modify-write:
+ * read the region, patch the bytes that need changing, write it back, then
+ * read it again and check the bytes stuck.
  */
-import { assessDevice } from './device-check'
+import { assessDevice, type Assessment, type IdentityState } from './device-check'
 import type { Log } from './log'
+import { formatHexColor, toHex, type Rgb } from './protocol/bytes'
+import { modelName } from './protocol/ids'
 import {
-  CONFIG_FRAME_COUNT,
-  assertConfig,
-  assertRgb,
-  buildReadConfigRequest,
-  buildStaticColorFrames,
-  formatHexColor,
-  isConfigResponse,
-  toHex,
-  type Rgb,
-} from './protocol'
-import { inspect, packetFromFrame, type SafeSend, type SendResult } from './safe-send'
-import { formatId, type DeviceInfo, type InputReport, type Transport } from './transport'
+  COLOR_NAMES,
+  COLOR_TABLE_LENGTH,
+  SETTINGS_LENGTH,
+  assertSettingsPage,
+  planStaticColor,
+  type StaticColorPlan,
+} from './protocol/settings'
+import {
+  Cmd,
+  IDENTITY_LENGTH,
+  INFO_IDENTITY,
+  REPORT_ID,
+  TRANSFER_DELAY_MS,
+  buildIdentityRequest,
+  buildReadRequest,
+  buildWrite,
+  compactHex,
+  normalizeReply,
+  parseReply,
+} from './protocol/wired'
+import { BlockedPacketError, featurePacket, type SafeSend, type SendResult } from './safe-send'
+import { formatId, type DeviceInfo, type Transport } from './transport'
 
 export interface Backup {
   format: 'open-f75-backup'
-  version: 1
+  version: 2
   createdAt: string
   device: DeviceInfo
-  /** The 10 config frames as hex, or null if the read failed. */
-  config: string[] | null
-  configError?: string
-  /** GET_REPORT result per declared feature report ID, as hex. */
-  featureReports: Record<string, string | { error: string }>
+  /** Hex, or null when that read failed (see `errors`). */
+  identity: string | null
+  settings: string | null
+  colorTable: string | null
+  errors: Partial<Record<'settings' | 'colorTable', string>>
 }
+
+export type ColorResult = SendResult | 'unchanged'
 
 export interface KeyboardOptions {
   transport: Transport
   send: SafeSend
   log: Log
   device: DeviceInfo
-  readTimeoutMs?: number
-  echoTimeoutMs?: number
+  /** Pause before every transfer; AULA's driver uses 20 ms. */
+  delayMs?: number
+  /** Attempts per transfer when the transport throws. */
+  attempts?: number
 }
 
 export class BusyError extends Error {
@@ -46,39 +66,19 @@ export class BusyError extends Error {
   }
 }
 
-function joinReport({ reportId, data }: InputReport): Uint8Array {
-  const frame = new Uint8Array(data.length + 1)
-  frame[0] = reportId
-  frame.set(data, 1)
-  return frame
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  return a.length === b.length && a.every((v, i) => v === b[i])
-}
-
-function describeInput(frame: Uint8Array): string {
-  if (isConfigResponse(frame)) return `config ${frame[3] + 1}/${CONFIG_FRAME_COUNT}`
-  const verdict = inspect(packetFromFrame(frame))
-  return verdict.allowed ? `echo: ${verdict.label}` : `input report ${formatId(frame[0], 2)}`
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: () => string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message())), ms)
-  })
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
-}
+const RETRY_DELAY_MS = 70
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
+const offset = (n: number) => `0x${n.toString(16).padStart(2, '0')}`
 
 export class Keyboard {
   readonly device: DeviceInfo
-  readonly canSend: boolean
+  private identityState: IdentityState = { status: 'unread' }
   private readonly transport: Transport
   private readonly send: SafeSend
   private readonly log: Log
-  private readonly readTimeoutMs: number
-  private readonly echoTimeoutMs: number
+  private readonly delayMs: number
+  private readonly attempts: number
   private readonly stopLogging: () => void
   private busy = false
 
@@ -87,79 +87,117 @@ export class Keyboard {
     this.send = options.send
     this.log = options.log
     this.device = options.device
-    this.readTimeoutMs = options.readTimeoutMs ?? 1500
-    this.echoTimeoutMs = options.echoTimeoutMs ?? 500
-    this.canSend = assessDevice(this.device).canSend
-    this.stopLogging = this.transport.onInput((report) => {
-      const frame = joinReport(report)
-      this.log.add('rx', describeInput(frame), toHex(frame))
+    this.delayMs = options.delayMs ?? TRANSFER_DELAY_MS
+    this.attempts = options.attempts ?? 3
+    this.stopLogging = this.transport.onInput(({ reportId, data }) => {
+      this.log.add('rx', `input report ${formatId(reportId, 2)}`, toHex([reportId, ...data]))
     })
+  }
+
+  get identity(): IdentityState {
+    return this.identityState
+  }
+
+  get assessment(): Assessment {
+    return assessDevice(this.device, this.identityState)
   }
 
   dispose(): void {
     this.stopLogging()
   }
 
-  /** Step 1: ask for the config and collect the 10 frames that come back. */
-  readConfig(): Promise<Uint8Array[]> {
-    return this.exclusive(() => this.readConfigUnlocked())
-  }
-
-  /** Fixed custom colour, saved to the board so it survives a replug. */
-  setStaticColor(rgb: Rgb): Promise<SendResult> {
-    assertRgb(rgb)
+  /** The only command sent before the board is known to be an F75. */
+  identify(): Promise<IdentityState> {
     return this.exclusive(async () => {
-      this.log.add('info', `Static colour ${formatHexColor(rgb)}: reading config first`)
-      const config = await this.readConfigUnlocked()
-      const frames = buildStaticColorFrames(config, rgb)
-
-      let result: SendResult = 'sent'
-      for (const frame of frames) result = await this.write(frame)
-
-      this.log.add(
-        'info',
-        result === 'dry-run'
-          ? `Dry run: ${frames.length} frames logged, none sent`
-          : `Done: ${frames.length} frames written and echoed`,
-      )
-      return result
+      if (!this.assessment.canIdentify) throw new Error('This device failed the descriptor checks, so nothing is sent to it')
+      try {
+        const bytes = await this.query(Cmd.GetInfo, INFO_IDENTITY, IDENTITY_LENGTH, buildIdentityRequest())
+        this.identityState = { status: 'read', bytes }
+        this.log.add('info', `Identity ${toHex(bytes)}: ${modelName(bytes)}`)
+      } catch (err) {
+        if (err instanceof BlockedPacketError) throw err
+        this.identityState = { status: 'failed', error: message(err) }
+        this.log.add('error', `Identity read failed: ${message(err)}`)
+      }
+      return this.identityState
     })
   }
 
-  /** Config read plus a GET_REPORT of every declared feature report, for a JSON backup. */
+  readSettings(): Promise<Uint8Array> {
+    return this.exclusive(() => this.readSettingsUnlocked())
+  }
+
+  /** "Fixed on" in one colour, saved on the board. See planStaticColor for the two paths. */
+  setStaticColor(rgb: Rgb): Promise<{ result: ColorResult; plan: StaticColorPlan }> {
+    return this.exclusive(async () => {
+      this.log.add('info', `Static colour ${formatHexColor(rgb)}: reading settings and colour table`)
+      const settings = await this.readSettingsUnlocked()
+      let table: Uint8Array | null = null
+      try {
+        table = await this.readColorTableUnlocked()
+      } catch (err) {
+        if (err instanceof BlockedPacketError) throw err
+        this.log.add('info', `Colour table unavailable (${message(err)}); only firmware colours are possible`)
+      }
+
+      const plan = planStaticColor(settings, table, rgb)
+      plan.warnings.forEach((w) => this.log.add('error', w))
+      if (plan.changes.length === 0) {
+        this.log.add('info', `The board already shows ${formatHexColor(rgb)} on Fixed on; nothing to write`)
+        return { result: 'unchanged', plan }
+      }
+
+      this.log.add(
+        'info',
+        plan.custom
+          ? 'Plan: custom colour into colour table row 1, slot 0 (unconfirmed path), then select slot 0'
+          : `Plan: select firmware colour ${plan.colorIndex} (${COLOR_NAMES[plan.colorIndex]}); settings page only`,
+      )
+      for (const c of plan.changes) {
+        this.log.add('info', `  ${c.region} ${offset(c.offset)}: ${offset(c.from)} -> ${offset(c.to)}`)
+      }
+
+      let result: SendResult = 'sent'
+      if (plan.colorTable) result = await this.write(Cmd.SetColorTable, plan.colorTable)
+      result = await this.write(Cmd.SetSettings, plan.settings)
+      if (result === 'dry-run') {
+        this.log.add('info', `Dry run: ${plan.colorTable ? 2 : 1} write(s) logged, none sent`)
+        return { result, plan }
+      }
+
+      await this.verify(plan)
+      this.log.add('info', 'Done: written and read back')
+      return { result, plan }
+    })
+  }
+
+  /** Identity, settings page and colour table as JSON-ready hex. Reads only. */
   backup(): Promise<Backup> {
     return this.exclusive(async () => {
-      this.requireSendable()
+      this.requireF75()
       const backup: Backup = {
         format: 'open-f75-backup',
-        version: 1,
+        version: 2,
         createdAt: new Date().toISOString(),
         device: this.device,
-        config: null,
-        featureReports: {},
+        identity: this.identityState.status === 'read' ? toHex(this.identityState.bytes, '') : null,
+        settings: null,
+        colorTable: null,
+        errors: {},
       }
-
       try {
-        backup.config = (await this.readConfigUnlocked()).map((f) => toHex(f, ''))
+        backup.settings = toHex(await this.readSettingsUnlocked(), '')
       } catch (err) {
-        backup.configError = err instanceof Error ? err.message : String(err)
-        this.log.add('error', `Config read failed: ${backup.configError}`)
+        if (err instanceof BlockedPacketError) throw err
+        backup.errors.settings = message(err)
+        this.log.add('error', `Settings read failed: ${message(err)}`)
       }
-
-      const featureIds = new Set(
-        this.device.interfaces.flatMap((i) => i.collections.flatMap((c) => c.feature.map((r) => r.id))),
-      )
-      for (const id of featureIds) {
-        const key = formatId(id, 2)
-        try {
-          const data = await this.transport.receiveFeature(id)
-          backup.featureReports[key] = toHex(data, '')
-          this.log.add('rx', `feature ${key} (GET_REPORT)`, toHex(data))
-        } catch (err) {
-          const error = err instanceof Error ? err.message : String(err)
-          backup.featureReports[key] = { error }
-          this.log.add('error', `GET_REPORT ${key} failed: ${error}`)
-        }
+      try {
+        backup.colorTable = toHex(await this.readColorTableUnlocked(), '')
+      } catch (err) {
+        if (err instanceof BlockedPacketError) throw err
+        backup.errors.colorTable = message(err)
+        this.log.add('error', `Colour table read failed: ${message(err)}`)
       }
       return backup
     })
@@ -175,51 +213,62 @@ export class Keyboard {
     }
   }
 
-  private requireSendable(): void {
-    if (!this.canSend) throw new Error('This device failed the recon checks, so nothing is sent to it')
-  }
-
-  private async readConfigUnlocked(): Promise<Uint8Array[]> {
-    this.requireSendable()
-    const frames = new Array<Uint8Array | undefined>(CONFIG_FRAME_COUNT).fill(undefined)
-    const received = () => frames.filter(Boolean).length
-    let complete!: () => void
-    const done = new Promise<void>((resolve) => (complete = resolve))
-
-    const stop = this.transport.onInput((report) => {
-      const frame = joinReport(report)
-      if (!isConfigResponse(frame)) return
-      frames[frame[3]] = frame
-      if (received() === CONFIG_FRAME_COUNT) complete()
-    })
-    try {
-      await this.send(packetFromFrame(buildReadConfigRequest()))
-      await withTimeout(done, this.readTimeoutMs, () => `config read timed out with ${received()}/${CONFIG_FRAME_COUNT} frames`)
-    } finally {
-      stop()
+  private requireF75(): void {
+    if (!this.assessment.canSend) {
+      throw new Error('The board has not identified as an AULA F75, so only the identity read is allowed')
     }
-
-    const config = frames as Uint8Array[]
-    assertConfig(config)
-    return config
   }
 
-  private async write(frame: Uint8Array): Promise<SendResult> {
-    this.requireSendable()
-    const expected = frame.subarray(1)
-    let echoed!: () => void
-    const echo = new Promise<void>((resolve) => (echoed = resolve))
+  private async readSettingsUnlocked(): Promise<Uint8Array> {
+    this.requireF75()
+    const page = await this.query(Cmd.GetSettings, 0, SETTINGS_LENGTH)
+    assertSettingsPage(page)
+    return page
+  }
 
-    const stop = this.transport.onInput(({ reportId, data }) => {
-      if (reportId === frame[0] && sameBytes(data, expected)) echoed()
-    })
-    try {
-      const result = await this.send(packetFromFrame(frame))
-      if (result === 'dry-run') return result
-      await withTimeout(echo, this.echoTimeoutMs, () => `no echo within ${this.echoTimeoutMs} ms for ${toHex(frame)}; stopped here`)
-      return result
-    } finally {
-      stop()
+  private async readColorTableUnlocked(): Promise<Uint8Array> {
+    this.requireF75()
+    return this.query(Cmd.GetColorTable, 0, COLOR_TABLE_LENGTH)
+  }
+
+  /** SET_FEATURE with the request header, then GET_FEATURE for the reply. */
+  private async query(cmd: number, param: number, length: number, request = buildReadRequest(cmd, param, length)) {
+    await this.transfer(request)
+    await sleep(this.delayMs)
+    const reply = normalizeReply(await this.transport.receiveFeature(REPORT_ID))
+    this.log.add('rx', `reply to ${offset(cmd)}`, compactHex(reply, true))
+    return parseReply(reply, cmd, length)
+  }
+
+  private write(cmd: number, data: Uint8Array): Promise<SendResult> {
+    this.requireF75()
+    return this.transfer(buildWrite(cmd, 0, data))
+  }
+
+  /** One SET_FEATURE through the guard, retried like AULA's driver does. */
+  private async transfer(frame: Uint8Array): Promise<SendResult> {
+    for (let attempt = 1; ; attempt++) {
+      await sleep(this.delayMs)
+      try {
+        return await this.send(featurePacket(frame))
+      } catch (err) {
+        if (err instanceof BlockedPacketError || attempt >= this.attempts) throw err
+        this.log.add('info', `Attempt ${attempt} failed (${message(err)}); retrying`)
+        await sleep(RETRY_DELAY_MS)
+      }
+    }
+  }
+
+  /** Reads the regions back and checks every byte the plan changed now holds its new value. */
+  private async verify(plan: StaticColorPlan): Promise<void> {
+    const after = {
+      settings: await this.readSettingsUnlocked(),
+      'colour table': plan.colorTable ? await this.readColorTableUnlocked() : null,
+    }
+    const missed = plan.changes.filter((c) => after[c.region] !== null && after[c.region]![c.offset] !== c.to)
+    if (missed.length) {
+      const list = missed.map((c) => `${c.region} ${offset(c.offset)} reads ${offset(after[c.region]![c.offset])}`)
+      throw new Error(`The board did not keep the write: ${list.join(', ')}`)
     }
   }
 }

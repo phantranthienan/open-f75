@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { assessDevice, type Assessment } from '@/device-check'
-import { Keyboard, type Backup } from '@/keyboard'
+import type { Assessment } from '@/device-check'
+import { Keyboard, type Backup, type ColorResult } from '@/keyboard'
 import { createLog } from '@/log'
-import type { Rgb } from '@/protocol'
-import { createSafeSend, type SendResult } from '@/safe-send'
+import type { Rgb } from '@/protocol/bytes'
+import type { BoardState, StaticColorPlan } from '@/protocol/settings'
+import { createSafeSend } from '@/safe-send'
 import { formatId, type DeviceInfo, type Transport } from '@/transport'
-import { MockTransport, type MockBoardState } from '@/transports/mock'
+import { MockTransport } from '@/transports/mock'
 import { WebHidTransport, isWebHidSupported } from '@/transports/webhid'
 
 export type TransportKind = 'webhid' | 'mock'
@@ -24,14 +25,16 @@ export function useSession() {
   const [kind, setKind] = useState<TransportKind>(webHidSupported ? 'webhid' : 'mock')
   const transport = useMemo(() => createTransport(kind), [kind])
   const [keyboard, setKeyboardState] = useState<Keyboard | null>(null)
+  const [assessment, setAssessment] = useState<Assessment | null>(null)
   const keyboardRef = useRef<Keyboard | null>(null)
   const setKeyboard = useCallback((next: Keyboard | null) => {
     keyboardRef.current?.dispose()
     keyboardRef.current = next
     setKeyboardState(next)
+    setAssessment(next?.assessment ?? null)
   }, [])
   const [busy, setBusy] = useState(false)
-  const [mockState, setMockState] = useState<MockBoardState | null>(null)
+  const [mockBoard, setMockBoard] = useState<BoardState | null>(null)
 
   // Dry run always starts on. The guard reads the ref, so a toggle applies to the next packet.
   const [dryRun, setDryRunState] = useState(true)
@@ -44,14 +47,38 @@ export function useSession() {
 
   const entries = useSyncExternalStore(log.subscribe, log.entries)
 
+  const run = useCallback(
+    async <T>(label: string, task: (kb: Keyboard) => Promise<T>): Promise<Outcome<T>> => {
+      const kb = keyboardRef.current
+      if (!kb) return { ok: false, error: 'Not connected' }
+      setBusy(true)
+      try {
+        return { ok: true, value: await task(kb) }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err)
+        log.add('error', `${label}: ${error}`)
+        return { ok: false, error }
+      } finally {
+        if (keyboardRef.current === kb) setAssessment(kb.assessment)
+        if (transport instanceof MockTransport) setMockBoard(transport.state.board)
+        setBusy(false)
+      }
+    },
+    [transport],
+  )
+
+  /** Connects the keyboard layer, then sends the one command allowed before identification. */
   const attach = useCallback(
     (device: DeviceInfo) => {
       const send = createSafeSend({ transport, log, isDryRun: () => dryRunRef.current })
-      setKeyboard(new Keyboard({ transport, send, log, device }))
-      if (transport instanceof MockTransport) setMockState(transport.state)
+      const kb = new Keyboard({ transport, send, log, device })
+      setKeyboard(kb)
+      if (transport instanceof MockTransport) setMockBoard(transport.state.board)
       log.add('info', `Connected via ${transport.name}: ${device.name} (${formatId(device.vendorId)}:${formatId(device.productId)})`)
+      if (kb.assessment.canIdentify) void run('Identify', (k) => k.identify())
+      else log.add('error', 'The descriptor checks failed; nothing will be sent to this device')
     },
-    [transport, setKeyboard],
+    [transport, setKeyboard, run],
   )
 
   // Silent reconnect: on load, and whenever a granted board is plugged back in.
@@ -80,24 +107,6 @@ export function useSession() {
     }
   }, [transport, attach, setKeyboard])
 
-  const run = useCallback(
-    async <T>(label: string, task: (kb: Keyboard) => Promise<T>): Promise<Outcome<T>> => {
-      if (!keyboard) return { ok: false, error: 'Not connected' }
-      setBusy(true)
-      try {
-        return { ok: true, value: await task(keyboard) }
-      } catch (err) {
-        const error = err instanceof Error ? err.message : String(err)
-        log.add('error', `${label}: ${error}`)
-        return { ok: false, error }
-      } finally {
-        if (transport instanceof MockTransport) setMockState(transport.state)
-        setBusy(false)
-      }
-    },
-    [keyboard, transport],
-  )
-
   const connect = useCallback(async () => {
     try {
       attach(await transport.connect())
@@ -115,16 +124,12 @@ export function useSession() {
   }, [transport, setKeyboard])
 
   const setStaticColor = useCallback(
-    (rgb: Rgb): Promise<Outcome<SendResult>> => run('Static colour', (kb) => kb.setStaticColor(rgb)),
+    (rgb: Rgb): Promise<Outcome<{ result: ColorResult; plan: StaticColorPlan }>> =>
+      run('Static colour', (kb) => kb.setStaticColor(rgb)),
     [run],
   )
 
   const backup = useCallback((): Promise<Outcome<Backup>> => run('Backup', (kb) => kb.backup()), [run])
-
-  const assessment: Assessment | null = useMemo(
-    () => (keyboard ? assessDevice(keyboard.device) : null),
-    [keyboard],
-  )
 
   return {
     kind,
@@ -137,7 +142,7 @@ export function useSession() {
     busy,
     dryRun,
     setDryRun,
-    mockState,
+    mockBoard,
     entries,
     clearLog: log.clear,
     connect,

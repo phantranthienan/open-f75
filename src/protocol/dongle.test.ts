@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import blue from '../test/golden/f87-fixed-on-blue.json'
-import green from '../test/golden/f87-fixed-on-green.json'
-import red from '../test/golden/f87-fixed-on-red.json'
+import blue from '../../test/golden/f87-dongle-fixed-on-blue.json'
+import green from '../../test/golden/f87-dongle-fixed-on-green.json'
+import red from '../../test/golden/f87-dongle-fixed-on-red.json'
+import { F75_SETTINGS } from '../transports/mock-data'
+import { formatHexColor, fromHex, parseHexColor, toHex, type Rgb } from './bytes'
 import {
   CONFIG_FRAME_COUNT,
   PALETTE_FRAME_COUNT,
@@ -13,13 +15,11 @@ import {
   buildStaticColorConfig,
   buildStaticColorFrames,
   checksum,
-  formatHexColor,
-  fromHex,
+  colorTableFromPaletteFrames,
   isValidFrame,
-  parseHexColor,
-  toHex,
-  type Rgb,
-} from './protocol'
+  settingsFromConfigFrames,
+} from './dongle'
+import { FIXED_ON, SettingsOffset, colorRow, colorTableMatchesLayout, effectSlot, isSettingsPage } from './settings'
 
 interface Golden {
   frames: { dir: string; hex: string }[]
@@ -123,6 +123,31 @@ describe.each(captures)('static colour vs OEM capture (%s)', (_, golden, rgb) =>
     const frames = buildStaticColorFrames(capture.config, rgb)
     expect(frames).toHaveLength(CONFIG_FRAME_COUNT + PALETTE_FRAME_COUNT + 1)
     expect(frames.every(isValidFrame)).toBe(true)
+  })
+})
+
+describe.each(captures)('same data as the wired protocol (%s)', (_, golden, rgb) => {
+  const capture = load(golden)
+
+  it('reassembles the config read into a valid 128-byte settings page', () => {
+    const page = settingsFromConfigFrames(capture.config)
+    expect(isSettingsPage(page)).toBe(true)
+  })
+
+  it('puts the effect, the FF FF and the per-effect table where the real F75 page has them', () => {
+    const page = settingsFromConfigFrames(capture.config)
+    const [frame0, frame4] = [capture.config[0], capture.config[4]]
+    expect(page[SettingsOffset.effect]).toBe(frame0[15]) // [F87-DOC] effect byte
+    expect(toHex(page.subarray(0x38, 0x3a))).toBe(toHex(F75_SETTINGS.subarray(0x38, 0x3a)))
+    expect(toHex(page.subarray(0x38, 0x3a))).toBe('ff ff')
+    // [F87-DOC] effect 1 entry, frame 4 bytes 7..8, is slot 0 at 0x3a
+    expect(effectSlot(page, FIXED_ON)).toEqual({ brightness: frame4[7], speed: frame4[8] >> 4, color: frame4[8] & 0x0f })
+  })
+
+  it('reassembles the OEM palette writes into a 512-byte colour table with rows of 7 colours', () => {
+    const table = colorTableFromPaletteFrames(capture.paletteWrites)
+    expect(colorTableMatchesLayout(table)).toBe(true)
+    expect(colorRow(table, FIXED_ON)[0]).toEqual(rgb) // the custom colour went into row 1, slot 0
   })
 })
 

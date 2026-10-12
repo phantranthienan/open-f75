@@ -1,70 +1,122 @@
 import { describe, expect, it } from 'vitest'
 import { Keyboard } from './keyboard'
 import { createLog } from './log'
+import { toHex } from './protocol/bytes'
+import { FIXED_ON, colorRow } from './protocol/settings'
 import { createSafeSend } from './safe-send'
 import { MOCK_DEVICE, MockTransport, type MockOptions } from './transports/mock'
 
-async function setup({ dryRun = false, ...mock }: MockOptions & { dryRun?: boolean } = {}) {
+const F87_IDENTITY = [0x03, 0, 0, 0, 0x00, 0x8f]
+
+async function setup({ dryRun = false, identify = true, ...mock }: MockOptions & { dryRun?: boolean; identify?: boolean } = {}) {
   const transport = new MockTransport(mock)
   const device = await transport.connect()
   const log = createLog()
   const send = createSafeSend({ transport, log, isDryRun: () => dryRun })
-  const keyboard = new Keyboard({ transport, send, log, device, readTimeoutMs: 200, echoTimeoutMs: 100 })
-  const kinds = () => log.entries().map((e) => e.kind)
+  const keyboard = new Keyboard({ transport, send, log, device, delayMs: 0 })
+  if (identify) await keyboard.identify()
+  const kinds = (kind: string) => log.entries().filter((e) => e.kind === kind)
   return { transport, keyboard, log, kinds }
 }
 
-describe('Keyboard', () => {
-  it('reads the 10 config frames', async () => {
+describe('identify', () => {
+  it('reads the identity and unlocks the board', async () => {
     const { keyboard } = await setup()
-    const config = await keyboard.readConfig()
-    expect(config).toHaveLength(10)
-    expect(config[0][15]).toBe(0x0b)
+    expect(keyboard.identity).toMatchObject({ status: 'read' })
+    expect(keyboard.assessment.canSend).toBe(true)
   })
 
-  it('sets and saves a static colour', async () => {
+  it.each([false, true])('accepts replies with and without the report ID (prefixed: %s)', async (replyWithReportId) => {
+    const { keyboard } = await setup({ replyWithReportId })
+    expect(keyboard.assessment.canSend).toBe(true)
+  })
+
+  it('locks out other models that share the USB IDs', async () => {
+    const { keyboard, kinds } = await setup({ identity: F87_IDENTITY })
+    expect(keyboard.assessment.canSend).toBe(false)
+    await expect(keyboard.setStaticColor([0, 255, 0])).rejects.toThrow(/not identified as an AULA F75/)
+    await expect(keyboard.backup()).rejects.toThrow(/not identified as an AULA F75/)
+    expect(kinds('tx').map((e) => e.text)).toEqual(['identity read'])
+  })
+
+  it('sends nothing at all to a device that fails the descriptor checks', async () => {
+    const { keyboard, kinds } = await setup({ device: { ...MOCK_DEVICE, productId: 0xfa09 }, identify: false })
+    await expect(keyboard.identify()).rejects.toThrow(/descriptor checks/)
+    expect(kinds('tx')).toHaveLength(0)
+  })
+
+  it('needs the identity before any other read', async () => {
+    const { keyboard, kinds } = await setup({ identify: false })
+    await expect(keyboard.readSettings()).rejects.toThrow(/not identified/)
+    expect(kinds('tx')).toHaveLength(0)
+  })
+})
+
+describe('setStaticColor', () => {
+  it('selects a firmware colour with one settings write, then reads it back', async () => {
     const { keyboard, transport, kinds } = await setup()
-    await expect(keyboard.setStaticColor([0x12, 0x34, 0x56])).resolves.toBe('sent')
-    expect(transport.state).toEqual({ effect: 1, color: [0x12, 0x34, 0x56], saves: 1 })
-    expect(kinds().filter((k) => k === 'tx')).toHaveLength(1 + 48)
+    const { result, plan } = await keyboard.setStaticColor([0, 255, 0])
+    expect(result).toBe('sent')
+    expect(plan.custom).toBe(false)
+    expect(transport.state.board).toMatchObject({ effect: FIXED_ON, color: [0, 255, 0] })
+    expect(kinds('tx').map((e) => e.text)).toEqual([
+      'identity read',
+      'settings read',
+      'colour table read',
+      'settings write',
+      'settings read',
+    ])
   })
 
-  it('in dry run, reads the config but changes nothing', async () => {
+  it('writes a custom colour to the colour table and selects it', async () => {
+    const { keyboard, transport, kinds } = await setup()
+    const { result, plan } = await keyboard.setStaticColor([0x12, 0x34, 0x56])
+    expect(result).toBe('sent')
+    expect(plan.custom).toBe(true)
+    expect(colorRow(transport.state.colorTable, FIXED_ON)[0]).toEqual([0x12, 0x34, 0x56])
+    expect(transport.state.board.color).toEqual([0x12, 0x34, 0x56])
+    expect(kinds('tx').map((e) => e.text)).toContain('colour table write')
+  })
+
+  it('writes nothing when the board already shows the colour', async () => {
+    const { keyboard, transport } = await setup()
+    await expect(keyboard.setStaticColor([255, 0, 0])).resolves.toMatchObject({ result: 'unchanged' })
+    expect(transport.state.writes).toBe(0)
+  })
+
+  it('in dry run, reads for real but writes nothing', async () => {
     const { keyboard, transport, kinds } = await setup({ dryRun: true })
-    await expect(keyboard.setStaticColor([0xff, 0, 0])).resolves.toBe('dry-run')
-    expect(transport.state.saves).toBe(0)
-    expect(kinds().filter((k) => k === 'tx')).toHaveLength(1)
-    expect(kinds().filter((k) => k === 'dry')).toHaveLength(48)
+    await expect(keyboard.setStaticColor([0x12, 0x34, 0x56])).resolves.toMatchObject({ result: 'dry-run' })
+    expect(transport.state.writes).toBe(0)
+    expect(kinds('dry').map((e) => e.text)).toEqual(['colour table write', 'settings write'])
   })
 
-  it('stops at the first missing echo and never saves', async () => {
-    const { keyboard, transport, kinds } = await setup({ echoLimit: 3 })
-    await expect(keyboard.setStaticColor([0xff, 0, 0])).rejects.toThrow(/no echo/)
-    expect(kinds().filter((k) => k === 'tx')).toHaveLength(1 + 4)
-    expect(transport.state.saves).toBe(0)
+  it('reports a board that ignores the write', async () => {
+    const { keyboard } = await setup({ ignoreWrites: true })
+    await expect(keyboard.setStaticColor([0, 255, 0])).rejects.toThrow(/did not keep the write: settings 0x3b reads 0x40/)
+  })
+
+  it('refuses a custom colour when the board has no table in the expected layout', async () => {
+    const { keyboard, transport } = await setup({ colorTable: new Uint8Array(512) })
+    await expect(keyboard.setStaticColor([0x12, 0x34, 0x56])).rejects.toThrow(/7 firmware colours/)
+    expect(transport.state.writes).toBe(0)
   })
 
   it('refuses a second operation while one is running', async () => {
     const { keyboard } = await setup()
-    const first = keyboard.setStaticColor([0, 0, 0xff])
-    await expect(keyboard.readConfig()).rejects.toThrow(/still running/)
+    const first = keyboard.setStaticColor([0, 0, 255])
+    await expect(keyboard.readSettings()).rejects.toThrow(/still running/)
     await first
   })
+})
 
-  it('sends nothing to a device that fails the recon checks', async () => {
-    const wireless = { ...MOCK_DEVICE, productId: 0xfa09 }
-    const { keyboard, kinds } = await setup({ device: wireless })
-    await expect(keyboard.setStaticColor([0xff, 0, 0])).rejects.toThrow(/recon checks/)
-    await expect(keyboard.backup()).rejects.toThrow(/recon checks/)
-    expect(kinds()).not.toContain('tx')
-    expect(kinds()).not.toContain('rx')
-  })
-
-  it('backs up the config and every declared feature report', async () => {
-    const { keyboard } = await setup()
+describe('backup', () => {
+  it('saves identity, settings page and colour table', async () => {
+    const { keyboard, transport } = await setup()
     const backup = await keyboard.backup()
-    expect(backup.config).toHaveLength(10)
-    expect(backup.config?.[0]).toBe('13440a000e000303020000040407000b200100b2')
-    expect(Object.keys(backup.featureReports)).toEqual(['0x06'])
+    expect(backup.identity).toBe('0300000000cd')
+    expect(backup.settings).toBe(toHex(transport.state.settings, ''))
+    expect(backup.colorTable).toBe(toHex(transport.state.colorTable, ''))
+    expect(backup.errors).toEqual({})
   })
 })

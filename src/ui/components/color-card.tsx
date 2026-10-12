@@ -4,12 +4,13 @@ import { Button } from '@/ui/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/ui/components/ui/card'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
-import { formatHexColor, parseHexColor } from '@/protocol'
+import { formatHexColor, parseHexColor } from '@/protocol/bytes'
+import { COLOR_NAMES, FIRMWARE_COLORS } from '@/protocol/settings'
 import { cn } from '@/ui/lib/utils'
 import type { Session } from '@/ui/hooks/use-session'
 
-// Red first: the roadmap's first live test.
-const PRESETS = ['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#ffb000', '#00ffff', '#ff00ff']
+// The seven firmware colours, red first: the roadmap's first live test.
+const PRESETS = FIRMWARE_COLORS.map(formatHexColor)
 
 const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value)
 
@@ -19,6 +20,7 @@ export function ColorCard({ session }: { session: Session }) {
   const [draft, setDraft] = useState(color)
   const [status, setStatus] = useState<string | null>(null)
   const canSend = session.connected && !session.busy && session.assessment?.canSend === true
+  const firmwareIndex = PRESETS.indexOf(color)
 
   function pick(value: string) {
     setDraft(value)
@@ -28,10 +30,14 @@ export function ColorCard({ session }: { session: Session }) {
   async function onSend() {
     const outcome = await session.setStaticColor(parseHexColor(color))
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
+    const { result, plan } = outcome.value
+    const what = plan.custom ? 'custom colour, colour table + settings page' : `firmware colour, settings page only`
     setStatus(
-      outcome.value === 'dry-run'
-        ? `Dry run: config read for real, 48 write frames logged for ${color}. Check them, then turn dry run off.`
-        : `Saved ${color} to the board. Unplug and replug to check that it sticks.`,
+      result === 'unchanged'
+        ? `The board already shows ${color} on Fixed on. Nothing was written.`
+        : result === 'dry-run'
+          ? `Dry run (${what}): ${plan.changes.length} byte(s) would change, listed in the log. Turn dry run off to send.`
+          : `Saved ${color} (${what}) and read it back. Unplug and replug to check that it sticks.`,
     )
   }
 
@@ -40,7 +46,8 @@ export function ColorCard({ session }: { session: Session }) {
       <CardHeader>
         <CardTitle>Static colour</CardTitle>
         <CardDescription>
-          Sets the "Fixed on" effect and saves it: read config, 10 config writes, 37 palette writes, save.
+          Sets the "Fixed on" effect: reads the settings page and colour table, patches the bytes that need
+          changing, writes them back, then reads them again to check.
         </CardDescription>
       </CardHeader>
 
@@ -73,12 +80,12 @@ export function ColorCard({ session }: { session: Session }) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {PRESETS.map((preset) => (
+          {PRESETS.map((preset, i) => (
             <button
               key={preset}
               type="button"
-              title={preset}
-              aria-label={`Use ${preset}`}
+              title={`${COLOR_NAMES[i]} ${preset}`}
+              aria-label={`Use ${COLOR_NAMES[i]}`}
               onClick={() => pick(preset)}
               className={cn(
                 'size-7 rounded-md border shadow-xs transition-transform hover:scale-110',
@@ -89,11 +96,19 @@ export function ColorCard({ session }: { session: Session }) {
           ))}
         </div>
 
-        {session.mockState && (
+        <p className="text-sm text-muted-foreground">
+          {firmwareIndex >= 0
+            ? `Firmware colour ${firmwareIndex} (${COLOR_NAMES[firmwareIndex]}): normally one byte in the settings page, the path AulaSofwareLinux confirmed on an F75.`
+            : 'Custom colour: also writes the colour table. Not yet confirmed on an F75, and only done if your board\'s table has the expected layout.'}
+        </p>
+
+        {session.mockBoard && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="size-4 rounded-sm border" style={{ backgroundColor: formatHexColor(session.mockState.color) }} />
-            Mock board: effect {session.mockState.effect}, colour {formatHexColor(session.mockState.color)},{' '}
-            {session.mockState.saves} save(s)
+            {session.mockBoard.color && (
+              <span className="size-4 rounded-sm border" style={{ backgroundColor: formatHexColor(session.mockBoard.color) }} />
+            )}
+            Mock board: effect {session.mockBoard.effect}
+            {session.mockBoard.color ? `, ${formatHexColor(session.mockBoard.color)}` : ''}
           </div>
         )}
 

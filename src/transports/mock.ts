@@ -1,91 +1,73 @@
 /**
- * A fake board for developing without the keyboard. It speaks the F87 config
- * protocol from protocol.ts: answers config reads, echoes every frame, and
- * "saves" the colour so tests and the UI can check what a real board would show.
+ * A fake board for developing without the keyboard. It speaks the wired
+ * protocol from protocol/wired.ts: answers identity, settings and colour table
+ * reads, and keeps what is written, so tests and the UI can check what a real
+ * board would show after a replug.
  */
-import {
-  Cmd,
-  F75_WIRED_PRODUCT_ID,
-  AULA_VENDOR_ID,
-  REPORT_ID,
-  Sub,
-  checksum,
-  fromHex,
-  isValidFrame,
-  type Rgb,
-} from '../protocol'
+import { parseReportDescriptor } from '../hid-descriptor'
+import { AULA_VENDOR_ID, F75_IDENTITY, F75_WIRED_PRODUCT_ID } from '../protocol/ids'
+import { describeBoard, type BoardState } from '../protocol/settings'
+import { Cmd, DATA_LENGTH, HEADER_LENGTH, INFO_IDENTITY, REPORT_ID, REPORT_LENGTH, parseHeader } from '../protocol/wired'
 import type { DeviceInfo, InputReport, ReportType, Transport } from '../transport'
+import { F75_INTERFACE1_DESCRIPTOR, F75_SETTINGS, F87_COLOR_TABLE } from './mock-data'
 
-/** The config an F87 returned in test/golden/f87-fixed-on-red.json (effect 0x0B). */
-const CAPTURED_CONFIG = [
-  '13440a000e000303020000040407000b200100b2',
-  '13440a010e010000000100020100ff0200000076',
-  '13440a020e010004010000000000000000000077',
-  '13440a030e000000000000000000000000000072',
-  '13440a040effff043704370437043704370437d3',
-  '13440a050e043704370437043704370437043711',
-  '13440a060e043704370437043704370437043712',
-  '13440a070e074707470744074407440744074489',
-  '13440a080e074407440404040404040404040435',
-  '13440a09025aa50000ff000000ffffff00ff0066',
-]
-
-/**
- * Interface layout guessed from the F87 docs (vendor pages 0xFF00+, report 0x13)
- * and OpenAula (feature report 0x06 on page 0xFF00). Replace it with what the
- * Device card shows for your board once Phase 0 is done.
- */
+/** Interface 1 of a real F75. Interface 0, the boot keyboard, is left out: browsers hide it. */
 export const MOCK_DEVICE: DeviceInfo = {
   name: 'Mock AULA F75',
   vendorId: AULA_VENDOR_ID,
   productId: F75_WIRED_PRODUCT_ID,
-  interfaces: [
-    {
-      collections: [{ usagePage: 0xff00, usage: 0x01, input: [], output: [], feature: [{ id: 0x06, size: 519 }] }],
-    },
-    {
-      collections: [
-        { usagePage: 0xff02, usage: 0x02, input: [{ id: REPORT_ID, size: 19 }], output: [{ id: REPORT_ID, size: 19 }], feature: [] },
-      ],
-    },
-  ],
-}
-
-export interface MockBoardState {
-  /** Effect number in the saved config. */
-  effect: number
-  /** Custom colour slot of the saved palette. */
-  color: Rgb
-  saves: number
+  interfaces: [{ collections: parseReportDescriptor(F75_INTERFACE1_DESCRIPTOR) }],
 }
 
 export interface MockOptions {
   device?: DeviceInfo
-  /** Stop echoing after this many echoes, to test the abort path. */
-  echoLimit?: number
+  identity?: readonly number[]
+  settings?: Uint8Array
+  colorTable?: Uint8Array
+  /** Return 520-byte replies that start with the report ID, as some platforms do. */
+  replyWithReportId?: boolean
+  /** Accept writes but keep the old bytes, like a board that ignores them. */
+  ignoreWrites?: boolean
+}
+
+export interface MockState {
+  identity: Uint8Array
+  settings: Uint8Array
+  colorTable: Uint8Array
+  writes: number
+  board: BoardState
 }
 
 export class MockTransport implements Transport {
   readonly name = 'Mock'
   private connected = false
-  private echoes = 0
-  private config = CAPTURED_CONFIG.map(fromHex)
-  private pendingConfig = this.config.map((f) => f.slice())
-  private palette: Uint8Array[] = []
-  private saved: MockBoardState = { effect: this.config[0][15], color: [0, 0, 0], saves: 0 }
+  private reply: Uint8Array | null = null
+  private writes = 0
+  private readonly identity: Uint8Array
+  private settings: Uint8Array
+  private colorTable: Uint8Array
+  private readonly options: MockOptions
+  private readonly device: DeviceInfo
   private readonly inputListeners = new Set<(report: InputReport) => void>()
   private readonly disconnectListeners = new Set<() => void>()
-  private readonly device: DeviceInfo
-  private readonly echoLimit: number
 
   constructor(options: MockOptions = {}) {
+    this.options = options
     this.device = options.device ?? MOCK_DEVICE
-    this.echoLimit = options.echoLimit ?? Infinity
+    this.identity = Uint8Array.from(options.identity ?? F75_IDENTITY)
+    this.settings = Uint8Array.from(options.settings ?? F75_SETTINGS)
+    this.colorTable = Uint8Array.from(options.colorTable ?? F87_COLOR_TABLE)
   }
 
-  /** What the board would show after a replug. */
-  get state(): MockBoardState {
-    return this.saved
+  /** What the board holds, and would show after a replug. */
+  get state(): MockState {
+    return {
+      identity: this.identity.slice(),
+      settings: this.settings.slice(),
+      colorTable: this.colorTable.slice(),
+      writes: this.writes,
+      board: describeBoard(this.settings, this.colorTable),
+    }
   }
 
   async connect(): Promise<DeviceInfo> {
@@ -109,43 +91,44 @@ export class MockTransport implements Transport {
 
   async send(type: ReportType, reportId: number, data: Uint8Array): Promise<void> {
     if (!this.connected) throw new Error('Mock device is not connected')
-    if (type !== 'output' || reportId !== REPORT_ID) throw new Error(`Mock does not handle ${type} report ${reportId}`)
-
-    const frame = new Uint8Array(data.length + 1)
+    if (type !== 'feature' || reportId !== REPORT_ID || data.length !== DATA_LENGTH) {
+      throw new Error(`Mock does not handle ${type} report ${reportId} with ${data.length} bytes`)
+    }
+    const frame = new Uint8Array(REPORT_LENGTH)
     frame[0] = reportId
     frame.set(data, 1)
-    if (!isValidFrame(frame)) return // a real board would ignore it
+    const header = parseHeader(frame)
+    const payload = frame.slice(HEADER_LENGTH, HEADER_LENGTH + header.length)
 
-    const [, cmd, sub, seq] = frame
-    if (cmd === Cmd.ReadConfig && sub === Sub.Confirm) {
-      this.config.forEach((f) => this.emit(f))
-      return
+    this.reply = null
+    switch (header.cmd) {
+      case Cmd.GetInfo:
+        if (header.param === INFO_IDENTITY) this.stageReply(frame, this.identity)
+        break
+      case Cmd.GetSettings:
+        this.stageReply(frame, this.settings)
+        break
+      case Cmd.GetColorTable:
+        this.stageReply(frame, this.colorTable.subarray(0, header.length))
+        break
+      case Cmd.SetSettings:
+        this.writes++
+        if (!this.options.ignoreWrites) this.settings = payload
+        break
+      case Cmd.SetColorTable:
+        this.writes++
+        if (!this.options.ignoreWrites) this.colorTable = payload
+        break
+      default:
+      // a real board would ignore it; the guard never lets one through
     }
-    if (cmd === Cmd.WriteConfig && sub === Sub.Config) {
-      const stored = frame.slice()
-      stored[1] = Cmd.ReadConfig
-      stored[19] = checksum(stored)
-      this.pendingConfig[seq] = stored
-    } else if (cmd === Cmd.WritePalette && sub === Sub.Palette) {
-      this.palette[seq] = frame.slice()
-    } else if (cmd === Cmd.Save && sub === Sub.Confirm) {
-      this.config = this.pendingConfig.map((f) => f.slice())
-      const slot = this.palette[1]
-      this.saved = {
-        effect: this.config[0][15],
-        color: slot ? [slot[12], slot[13], slot[14]] : this.saved.color,
-        saves: this.saved.saves + 1,
-      }
-    } else {
-      return
-    }
-    if (this.echoes++ < this.echoLimit) this.emit(frame)
   }
 
   async receiveFeature(reportId: number): Promise<Uint8Array> {
-    const report = this.device.interfaces.flatMap((i) => i.collections.flatMap((c) => c.feature)).find((r) => r.id === reportId)
-    if (!report) throw new Error(`Mock does not declare feature report ${reportId}`)
-    return new Uint8Array(report.size)
+    if (!this.connected) throw new Error('Mock device is not connected')
+    if (reportId !== REPORT_ID) return new Uint8Array(5)
+    const reply = this.reply ?? new Uint8Array(REPORT_LENGTH)
+    return this.options.replyWithReportId ? reply.slice() : reply.slice(1)
   }
 
   onInput(listener: (report: InputReport) => void): () => void {
@@ -158,8 +141,11 @@ export class MockTransport implements Transport {
     return () => this.disconnectListeners.delete(listener)
   }
 
-  private emit(frame: Uint8Array): void {
-    const report = { reportId: frame[0], data: frame.slice(1) }
-    setTimeout(() => this.inputListeners.forEach((l) => l(report)), 1)
+  /** The reply repeats the request header and carries the data from byte 8. */
+  private stageReply(request: Uint8Array, data: Uint8Array): void {
+    const reply = new Uint8Array(REPORT_LENGTH)
+    reply.set(request.subarray(0, HEADER_LENGTH))
+    reply.set(data, HEADER_LENGTH)
+    this.reply = reply
   }
 }

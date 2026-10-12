@@ -23,8 +23,8 @@ export function BackupCard({ session }: { session: Session }) {
     const outcome = await session.backup()
     if (!outcome.ok) return setStatus(`Failed: ${outcome.error}`)
     const name = download(outcome.value)
-    const config = outcome.value.config ? '10 config frames' : 'no config (read failed)'
-    setStatus(`Saved ${name}: ${config}, ${Object.keys(outcome.value.featureReports).length} feature report(s).`)
+    const failed = Object.keys(outcome.value.errors)
+    setStatus(failed.length ? `Saved ${name}, but these reads failed: ${failed.join(', ')}.` : `Saved ${name}.`)
   }
 
   return (
@@ -32,7 +32,7 @@ export function BackupCard({ session }: { session: Session }) {
       <CardHeader>
         <CardTitle>Backup</CardTitle>
         <CardDescription>
-          Read before you write. Saves the current config and every feature report as JSON.
+          Read before you write. Saves the identity, the 128-byte settings page and the 512-byte colour table as JSON.
         </CardDescription>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
