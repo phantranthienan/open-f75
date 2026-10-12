@@ -22,7 +22,7 @@ One screen, like a terminal dashboard: the **device** pane (checks, identity, HI
 
 Saved colours live in this browser's `localStorage` (newest first, up to 16). The wheel always gives full-value colours: the board has its own brightness, and dark colours make the LEDs look off. Type a hex value for anything else.
 
-The design system comes from the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (Dark Mode (OLED) style, "code dark + run green" palette, JetBrains Mono, dense spacing). Its tokens are in `src/index.css`; the app is dark only.
+The design system comes from the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill (Dark Mode (OLED) style, JetBrains Mono, dense spacing). The colours are three dark terminal themes you switch between in the top bar: [Tokyo Night](https://github.com/folke/tokyonight.nvim) (the default), [Catppuccin Mocha](https://catppuccin.com/palette) and [Rosé Pine](https://rosepinetheme.com/palette). The choice is kept in this browser's `localStorage`. The tokens are in `src/index.css`.
 
 ## First session with the real board
 

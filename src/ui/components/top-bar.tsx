@@ -5,8 +5,41 @@ import { Switch } from '@/ui/components/ui/switch'
 import { formatId } from '@/transport'
 import { cn } from '@/ui/lib/utils'
 import type { Session } from '@/ui/hooks/use-session'
+import { useTheme } from '@/ui/hooks/use-theme'
 
-/** Title bar: the connection light, the dry-run switch and Connect. */
+/** One button per theme; each swatch carries its own data-theme, so it shows that theme's accent, ok and warn colours. */
+function ThemeSwitch() {
+  const { theme, setTheme, themes } = useTheme()
+  const active = themes.find((t) => t.id === theme) ?? themes[0]
+
+  return (
+    <div role="group" aria-label="Theme" className="flex items-center gap-1.5">
+      <span className="hidden text-xs text-muted-foreground md:inline">{active.name.toLowerCase()}</span>
+      {themes.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          aria-label={t.name}
+          aria-pressed={t.id === theme}
+          title={t.name}
+          onClick={() => setTheme(t.id)}
+          className={cn(
+            'h-6 w-8 overflow-hidden rounded-sm border transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 pointer-coarse:h-11 pointer-coarse:w-11',
+            t.id === theme && 'ring-2 ring-primary ring-offset-2 ring-offset-card',
+          )}
+        >
+          <span data-theme={t.id} aria-hidden="true" className="flex size-full items-center justify-center gap-0.5 bg-background">
+            <span className="h-3 w-1 rounded-full bg-primary" />
+            <span className="h-3 w-1 rounded-full bg-signal-ok" />
+            <span className="h-3 w-1 rounded-full bg-signal-warn" />
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Title bar: the connection light, the theme, the dry-run switch and Connect. */
 export function TopBar({ session }: { session: Session }) {
   const { connected, busy, dryRun, device } = session
 
@@ -33,6 +66,8 @@ export function TopBar({ session }: { session: Session }) {
             <span className="text-muted-foreground">not connected</span>
           )}
         </span>
+
+        <ThemeSwitch />
 
         <div className="flex items-center gap-2">
           <Switch

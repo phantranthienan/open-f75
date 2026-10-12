@@ -10,41 +10,101 @@
 /*
  * Design system from the ui-ux-pro-max skill ("developer tool terminal
  * dashboard hardware", density 8, motion 2): Dark Mode (OLED) style,
- * "code dark + run green" palette, JetBrains Mono. Dark only: the skill rates
- * light mode "not recommended" for this style.
+ * JetBrains Mono, dense spacing. Dark only.
  *
- * Signal colours are additions for terminal states; each reaches at least
- * 4.5:1 on --background, and is always paired with text, never colour alone.
+ * Colours: three terminal schemes the owner picked, because the skill's own
+ * dark palettes were all the same slate and green. Every text pair reaches
+ * 4.5:1 and control borders 3:1; the signal colours mark terminal states and
+ * always come with text. The theme is chosen in the top bar
+ * (src/ui/hooks/use-theme.ts) and set as data-theme on <html>; Tokyo Night is
+ * the default. Any element can carry data-theme, which is how the switcher's
+ * swatches show the other themes.
  */
 :root {
   color-scheme: dark;
   --radius: 0.25rem;
+}
 
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --card: #1b2336;
-  --card-foreground: #f8fafc;
-  --popover: #1b2336;
-  --popover-foreground: #f8fafc;
-  --primary: #22c55e;
-  --primary-foreground: #0f172a;
-  --secondary: #334155;
-  --secondary-foreground: #ffffff;
-  --muted: #272f42;
-  --muted-foreground: #94a3b8;
-  --accent: #272f42;
-  --accent-foreground: #f8fafc;
-  --destructive: #ef4444;
-  --border: #475569;
-  --hairline: #273349;
-  --input: #475569;
-  --ring: #ffffff;
-  --scrollbar: #475569;
+:root,
+[data-theme="tokyo-night"] {
+  --background: #1a1b26;
+  --foreground: #c0caf5;
+  --card: #16161e;
+  --card-foreground: #c0caf5;
+  --popover: #16161e;
+  --popover-foreground: #c0caf5;
+  --primary: #7aa2f7;
+  --primary-foreground: #16161e;
+  --secondary: #292e42;
+  --secondary-foreground: #c0caf5;
+  --muted: #292e42;
+  --muted-foreground: #a9b1d6;
+  --accent: #292e42;
+  --accent-foreground: #c0caf5;
+  --destructive: #f7768e;
+  --border: #3b4261;
+  --hairline: #24283b;
+  --input: #737aa2;
+  --ring: #c0caf5;
+  --scrollbar: #3b4261;
+  --signal-ok: #9ece6a;
+  --signal-warn: #e0af68;
+  --signal-info: #7dcfff;
+  --signal-error: #f7768e;
+}
 
-  --signal-ok: #22c55e; /* 7.7:1 */
-  --signal-warn: #f59e0b; /* 8.3:1, dry run */
-  --signal-info: #38bdf8; /* 8.6:1, sent frames */
-  --signal-error: #ef4444; /* 4.7:1 */
+[data-theme="catppuccin-mocha"] {
+  --background: #1e1e2e;
+  --foreground: #cdd6f4;
+  --card: #181825;
+  --card-foreground: #cdd6f4;
+  --popover: #181825;
+  --popover-foreground: #cdd6f4;
+  --primary: #cba6f7;
+  --primary-foreground: #11111b;
+  --secondary: #313244;
+  --secondary-foreground: #cdd6f4;
+  --muted: #313244;
+  --muted-foreground: #a6adc8;
+  --accent: #313244;
+  --accent-foreground: #cdd6f4;
+  --destructive: #f38ba8;
+  --border: #45475a;
+  --hairline: #313244;
+  --input: #6c7086;
+  --ring: #b4befe;
+  --scrollbar: #45475a;
+  --signal-ok: #a6e3a1;
+  --signal-warn: #fab387;
+  --signal-info: #89dceb;
+  --signal-error: #f38ba8;
+}
+
+[data-theme="rose-pine"] {
+  --background: #191724;
+  --foreground: #e0def4;
+  --card: #1f1d2e;
+  --card-foreground: #e0def4;
+  --popover: #1f1d2e;
+  --popover-foreground: #e0def4;
+  --primary: #c4a7e7;
+  --primary-foreground: #191724;
+  --secondary: #26233a;
+  --secondary-foreground: #e0def4;
+  --muted: #26233a;
+  --muted-foreground: #908caa;
+  --accent: #26233a;
+  --accent-foreground: #e0def4;
+  --destructive: #eb6f92;
+  --border: #403d52;
+  --hairline: #26233a;
+  --input: #6e6a86;
+  --ring: #e0def4;
+  --scrollbar: #403d52;
+  --signal-ok: #9ccfd8;
+  --signal-warn: #f6c177;
+  --signal-info: #c4a7e7;
+  --signal-error: #eb6f92;
 }
 
 @theme inline {
