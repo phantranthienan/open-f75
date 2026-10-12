@@ -56,7 +56,6 @@ src/
   protocol/
     wired.ts          0x06 feature-report framing and commands (the F75 over USB)
     settings.ts       settings page and colour table: offsets, checks, planStaticColor
-    dongle.ts         0x13 20-byte framing (2.4 GHz dongle); never sent, the allowlist refuses it
     ids.ts            USB IDs and model identities
     bytes.ts          hex and colour helpers
   transport.ts        Transport interface: send, receiveFeature, onInput, onDisconnect
@@ -94,7 +93,7 @@ references/           reference repos as git submodules
 | `AulaSofwareLinux` | The wired protocol, the settings page, model identities. AULA's own F75 profile is in `assets/devices/f75-fr/device.ini`. | Verified on an F75 and derived from AULA's driver. Small, new project. Its `assets/` also holds OEM `Update.exe` files; never run them. |
 | `OpenRGB` | `Controllers/SinowealthController/SinowealthKeyboard10cController`: identity, F75 LED map, direct (streaming) mode for Phase 5. | Large, code-reviewed project. GPL-2.0-or-later, so use it for facts and don't paste its code. |
 | `OpenAula` | Direct mode on the F75, an F75 key layout. | Matches OpenRGB byte for byte. |
-| `Aula-F87-Controller` | The dongle protocol, and the OEM captures the colour-table layout was inferred from. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
+| `Aula-F87-Controller` | The 2.4 GHz dongle protocol, and the OEM captures the colour-table layout was first inferred from. | Its `0x13` protocol is the 2.4 GHz path; the F75's wired interface doesn't declare report `0x13`. |
 
 Other sources worth knowing: [RustamSheoran/aula-f75](https://github.com/RustamSheoran/aula-f75) (WebHID, same wired framing, a second opinion), [JavaProgswing/aula-f75](https://github.com/JavaProgswing/aula-f75) (the F75 dongle), the [WebHID spec](https://wicg.github.io/webhid/) and [Chrome's WebHID guide](https://developer.chrome.com/docs/capabilities/hid).
 

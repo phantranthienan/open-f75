@@ -1,6 +1,5 @@
 /**
- * What the board stores, independent of how it travels (wired.ts or dongle.ts).
- * Pure functions only.
+ * What the board stores: the settings page and the colour table. Pure functions only.
  *
  * SETTINGS PAGE: 128 bytes, read with 0x84 and written with 0x04, ending in 5A A5.
  *   0x0a        live effect, as its 1-based position in AULA's effect list
@@ -11,18 +10,18 @@
  *               slot = effect - 1                                   [ASL] confirmed with Fn+Tab
  *   0x7e..0x7f  5A A5 end marker
  *   The colour nibble selects one of 7 colours (0 red ... 6 white), 7 = colourful.
- *   Over the dongle the same 128 bytes travel as ten 14-byte fragments
- *   (dongle.ts, settingsFromConfigFrames), and the offsets line up.
+ *   Over the 2.4 GHz dongle the same 128 bytes travel as ten 14-byte
+ *   fragments of report 0x13 [F87-CAP], and the offsets line up.
  *
  * COLOUR TABLE: 512 bytes, read with 0x8a and written with 0x0a.
- *   HYPOTHESIS, not confirmed on an F75. Reassembling the OEM app's dongle
- *   palette writes gives 512 bytes of rows of 7 RGB colours (21 bytes per row,
- *   red green blue yellow magenta cyan white), with 5A A5 at 506. For
- *   "Fixed on, custom colour" the OEM app put the colour in row 1, slot 0
- *   (offset 21) and selected colour 0 [F87-CAP]. The two F75 projects
- *   disagree on what 0x0a holds ([RS] colour slots, [ASL] per-key colours), so
- *   custom colours are only written when the board's own table has exactly
- *   this layout (colorTableMatchesLayout).
+ *   Rows of 7 RGB colours (21 bytes per row: red green blue yellow magenta
+ *   cyan white) with 5A A5 at 506. First inferred from the OEM app's palette
+ *   writes on an F87 [F87-CAP]; the table read off the owner's F75 has exactly
+ *   this layout, rows 1 to 13 [OWNER]. For "Fixed on, custom colour" the OEM
+ *   app put the colour in row 1, slot 0 (offset 21) and selected colour 0
+ *   [F87-CAP]. The F75 projects disagree on what 0x0a holds ([RS] colour
+ *   slots, [ASL] per-key colours), so custom colours are only written when the
+ *   board's own table has this layout (colorTableMatchesLayout).
  *
  * Sources:
  *   [ASL]     references/AulaSofwareLinux/src/config_page.rs, F75 dump and tests
@@ -31,6 +30,7 @@
  *   [RS]      github.com/RustamSheoran/aula-f75 README (0x8a/0x0a = 512-byte colour table)
  *   [F87-CAP] OEM-app captures of an F87 (2.4 GHz dongle), references/Aula-F87-Controller/
  *             captures/macos-host-wireshark-vm/config-changes/1[345]-fixed-on-*.pcapng
+ *   [OWNER]   a backup of the owner's F75 taken with this app (test/fixtures/f75.ts)
  */
 import { assertRgb, sameBytes, type Rgb } from '@/protocol/bytes'
 

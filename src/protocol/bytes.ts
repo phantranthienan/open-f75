@@ -1,4 +1,4 @@
-/** Byte and colour helpers shared by the wired and dongle protocols. */
+/** Byte and colour helpers. */
 
 export type Rgb = readonly [r: number, g: number, b: number]
 
