@@ -155,7 +155,7 @@ Over the cable the board takes 520-byte HID feature reports with report ID `0x06
 
 Platforms hand the reply over differently. Chrome on macOS returned 14 bytes for the identity reply on a real F75 (report ID, 7 header bytes and 6 data bytes, no padding). `parseReply` therefore accepts the reply with or without the report ID, padded or not. It refuses one that doesn't start with the command it asked for.
 
-AULA's driver waits 20 ms before every transfer and retries failures. The app does the same: 3 attempts, 70 ms apart.
+AULA's driver waits 20 ms before every transfer and tries a failed one 3 times, 70 ms apart. The app does the same. The decompiled driver builds exactly this frame ([report](docs/reverse-engineering/report.md#5-the-frame)).
 
 ### Commands
 
@@ -167,7 +167,7 @@ AULA's driver waits 20 ms before every transfer and retries failures. The app do
 | `0x8a` | `0` | 512 | colour table read | yes |
 | `0x0a` | `0` | 512 | colour table write | yes |
 
-These five are the whole allowlist. Other commands are known from AULA's driver and are refused on purpose: `0x03`/`0x83` key matrix, `0x05`/`0x85` macros, `0x06`/`0x86` game mode, `0x08` direct LEDs, `0x0b` screen, `0x11` factory reset, `0x87` battery.
+These five are the whole allowlist. The other commands in AULA's driver are refused on purpose: `0x03`/`0x83` key matrix, `0x05`/`0x85` macros, `0x06`/`0x86` per-key colours, `0x08` direct LEDs, `0x0b`/`0x0c`/`0x0d` screen, `0x0e`/`0x0f`, `0x11` factory reset, `0x87` battery and `0x88`. The [report](docs/reverse-engineering/report.md#6-every-command) has each one byte by byte.
 
 ### Model identities
 
@@ -179,10 +179,13 @@ Read with `0x84`, written with `0x04`. It always ends in `5A A5`, and a page wit
 
 | Offset | Meaning | Status |
 | --- | --- | --- |
-| `0x0a` | live effect, as its position in AULA's effect list. `1` = Fixed on | confirmed on an F75 |
+| `0x03` | debounce. `0x01` on the owner's board | AULA's driver; this app never changes it |
+| `0x09` | `1` while the per-key effect is live, else `0` | AULA's driver; the app clears it when it selects Fixed on, as the driver does |
+| `0x0a` | live effect: the first number of its `LedOptN` line in AULA's profile. `1`–`18` are the effects in list order (`1` = Fixed on), `21` is per-key, `0` is off | confirmed on an F75 and in AULA's driver |
+| `0x0b` | `0x20` + per-key colour group, `0x20` on the F75 | AULA's driver |
 | `0x18` | idle (sleep) timeout. `0x0a` = 300 s in AULA's F75 profile | confirmed on an F75; this app never changes it |
 | `0x38–0x39` | `FF FF` | |
-| `0x3a…` | one 2-byte slot per effect, starting with effect 1: `[brightness, speed << 4 \| colour]` | confirmed with `Fn+Tab` |
+| `0x3a…` | one 2-byte slot per effect, in list order: `[brightness, speed << 4 \| colour]`. Effects 1–18 use slot `effect − 1`, per-key slot 18 | confirmed with `Fn+Tab` and in AULA's driver |
 | `0x7e–0x7f` | `5A A5` end marker | |
 
 So Fixed on is the slot at `0x3a`: brightness at `0x3a`, and speed (high nibble) plus colour (low nibble) at `0x3b`. The colour nibble picks one of 7 colours, `0` red, `1` green, `2` blue, `3` yellow, `4` magenta, `5` cyan, `6` white, or `7` for colourful. The owner's board reads `07 46` there: brightness 7, speed 4, colour 6.
@@ -191,17 +194,17 @@ So Fixed on is the slot at `0x3a`: brightness at `0x3a`, and speed (high nibble)
 
 Read with `0x8a`, written with `0x0a`. It is laid out in rows of 7 RGB colours (21 bytes per row, slots in the firmware order above), with `5A A5` at offset 506. Row 1 (offsets 21–41) belongs to Fixed on: the colour nibble picks a slot in that row.
 
-This layout was first inferred from OEM-app captures of an F87. The table read off the owner's F75 has exactly this layout. On that board, row 1 holds white in slot 0, then green, blue, yellow, magenta, cyan and white.
+More precisely, each effect has a row, at row = its `0x0a` value. AULA's driver calls the commands `GetLedRgbTab`/`SetLedRgbTab`, builds 20 rows and pads them to 512 bytes with the marker. This settles it: the region is a colour table, not per-key colour. It was first inferred from OEM-app captures of an F87, and the table read off the owner's F75 has exactly this layout. On that board, row 1 holds white in slot 0, then green, blue, yellow, magenta, cyan and white.
 
 ### Setting a colour: the two paths
 
 `planStaticColor` in `src/protocol/settings.ts` decides:
 
 1. **The colour is already in the Fixed-on row.** Only the colour nibble changes, one byte in the settings page, plus the effect byte if the board isn't on Fixed on. AulaSofwareLinux confirmed this on an F75: pressing `Fn+Tab` moved exactly that byte.
-2. **Otherwise**, if the board's own colour table has the expected layout, the colour goes into row 1, slot 0, and the nibble selects slot 0. That is what the OEM app did on the F87. It is less proven on the F75, because the F75 projects disagree about what `0x0a` holds, so the app checks the layout first. On the owner's board slot 0 holds white, so red takes this path too.
+2. **Otherwise**, if the board's own colour table has the expected layout, the colour goes into row 1, slot 0, and the nibble selects slot 0. That is exactly what AULA's driver does for a custom colour, and what the OEM app did on the F87. The app still checks the board's table first. On the owner's board slot 0 holds white, so red takes this path too.
 3. **Otherwise** the app refuses and says only the 7 firmware colours are possible.
 
-If the board already shows the colour, nothing is written. If Fixed-on brightness is 0, the app warns that the keys will stay dark.
+Either way the effect byte becomes Fixed on and the per-key flag at `0x09` is cleared. If the board already shows the colour, nothing is written. If Fixed-on brightness is 0, the app warns that the keys will stay dark.
 
 ## Safety
 
@@ -212,7 +215,7 @@ The only real risk to a keyboard is firmware. Everything here is meant to make t
   1. **The guard.** App code sends only through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex. A refused frame shows as a `BLOCK` line in the log.
   2. **The transport.** `src/transports/webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else. It also only routes a report to an interface that declares it.
   3. **The build.** A raw WebHID call anywhere but `src/transports/webhid.ts`, or `transport.send` anywhere but `src/safe-send.ts`, breaks the build. The module fails to load in `npm run dev`, and `npm run build` and `npm run lint` fail (`scripts/raw-sends.mjs`).
-- **The bootloader door stays shut.** AULA's firmware updater, decompiled, restarts a board into its bootloader with `05 75 00 00 00 00` on feature report `0x05`, then erases, writes and burns over reports `0x05` and `0x06` as device `0603:1020`. The allowlist refuses report `0x05` and any `0x06` frame that isn't 520 bytes with an allowed command, and the device checks refuse any ID but `258A:010C`. The safety test sends those exact frames and checks they're refused.
+- **The bootloader door stays shut.** AULA's firmware updater, decompiled, restarts a board into its bootloader with `05 75 00 00 00 00` on feature report `0x05`, then erases, writes and burns over reports `0x05` and `0x06` as device `0603:1020`. The allowlist refuses report `0x05` and any `0x06` frame that isn't 520 bytes with an allowed command, and the device checks refuse any ID but `258A:010C`. The safety test sends those exact frames and checks they're refused. AULA's own driver never sends report `0x05` either: flashing is a separate `Update.exe`, which the F75 driver package doesn't include.
 - **Identity gate.** Until the board identifies as an F75, the identity read is the only command sent. If the product ID isn't the wired F75's, nothing at all is sent. A board that reappears with a different product ID may be in its bootloader: send nothing, unplug, wait, replug.
 - **Dry run is on at every page load.** It blocks writes but lets reads through.
 - **Read before write.** Back up first. Every change is read-modify-write from the board's own bytes, and every write is read back.
@@ -296,7 +299,9 @@ src/
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
 scripts/rea-bridge.py      keeps one REA/Ghidra session open for static analysis of AULA's binaries
-docs/reverse-engineering/  the plan (and later the report) for decompiling AULA's driver
+scripts/ghidra/            ExportAll.java: Ghidra headless export (strings, imports, all decompiled C)
+scripts/pe-vtable.py       finds a C++ class's vtable in a Windows binary through its RTTI
+docs/reverse-engineering/  the plan, and the report on AULA's decompiled F75 driver
 references/                the reference projects, as git submodules
 index.html                 the page, plus the small script that applies the saved theme before paint
 vite.config.ts             React, Tailwind, the '@' alias and the raw-send check
@@ -343,8 +348,8 @@ test/
   connect/           identity read, reply formats, other models and product IDs,
                      no auto-connect, unplug, no WebHID
   safety/            the transport refuses everything off the allowlist, even with the guard bypassed
-  static-color/      dry run, firmware colour (one byte), custom colour, no-op,
-                     a board that ignores writes, a colour table with another layout
+  static-color/      dry run, firmware colour (one byte), custom colour, leaving the per-key
+                     effect, no-op, a board that ignores writes, a colour table with another layout
   backup/            the downloaded JSON, reads only; not offered for another model
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage
@@ -416,7 +421,8 @@ The comments in `src/protocol/` tag each fact with its source:
 
 | Tag | Source |
 | --- | --- |
-| `[ASL]` | [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), `src/proto.rs` and `src/config_page.rs`. Recovered from AULA's own driver and verified on an F75. |
+| `[DRV]` | AULA's F75 driver, `OemDrv.exe` from `AULA F75 Setup v2.0 20260514.exe` (SHA-256 `1dfe4803…ae44a7`), decompiled with Ghidra 12.1.4, never run. Everything about it is in [docs/reverse-engineering/report.md](docs/reverse-engineering/report.md). |
+| `[ASL]` | [AulaSofwareLinux](https://github.com/yhuikzdtguioaert/AulaSofwareLinux), `src/proto.rs` and `src/config_page.rs`. Recovered from AULA's own driver and verified on an F75. Its reading of `0x8a`/`0x0a` as per-key colour is wrong (`[DRV]`). |
 | `[KBINI]` | AULA's own F75 profile, `references/AulaSofwareLinux/assets/devices/f75-fr/device.ini` |
 | `[ORGB]` | OpenRGB's Sinowealth controller: same identity request, model byte `0xCD` = AULA F75 |
 | `[CAP]`, `[F87-CAP]` | OEM-app captures of an F87 in `references/Aula-F87-Controller/captures/` |

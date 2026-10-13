@@ -66,6 +66,25 @@ test.describe('static colour over WebHID', () => {
     expect((await boardState(page)).colorTable).toEqual(table)
   })
 
+  test("leaving the per-key effect clears its flag, as AULA's driver does", async ({ page }) => {
+    // The board as AULA's driver leaves it on the per-key effect: 0x09 = 1, 0x0a = 21.
+    const perKey = [...BOARD.settings]
+    perKey[0x09] = 1
+    perKey[0x0a] = 21
+    await openWithBoard(page, { settings: perKey })
+    await connectF75(page)
+    await setDryRun(page, false)
+    await pickColor(page, '#00ff00')
+    await sendColor(page)
+
+    await expect(page.getByText('Saved #00ff00 (firmware colour')).toBeVisible()
+    const write = (await sent(page)).find((r) => r.data[0] === SETTINGS_WRITE)!
+    const written = payloadOf(write.data, 128)
+    expect(changedOffsets(perKey, written)).toEqual([0x09, 0x0a, 0x3b])
+    expect([written[0x09], written[0x0a], written[0x3b]]).toEqual([0, 1, 0x41])
+    expect((await boardState(page)).settings).toEqual(written)
+  })
+
   test('nothing is written when the board already shows the colour', async ({ page }) => {
     // The owner's board shows white as colour 6, and slot 0 holds white too.
     await openWithBoard(page)

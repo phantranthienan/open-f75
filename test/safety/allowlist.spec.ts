@@ -22,10 +22,15 @@ test('the WebHID transport refuses packets off the allowlist, even with the guar
       return f
     }
     const attempts: [string, 'feature' | 'output', number, Uint8Array][] = [
-      ['factory reset', 'feature', 0x06, frame(0x11, 0, 1, [1])],
+      // Commands AULA's driver (OemDrv.exe, decompiled) has for the F75's board family.
+      ['factory reset', 'feature', 0x06, frame(0x11, 0, 1, [0])],
       ['key matrix write', 'feature', 0x06, frame(0x03, 0, 512)],
-      ['macro write', 'feature', 0x06, frame(0x05, 0, 16)],
+      ['macro write', 'feature', 0x06, frame(0x05, 0, 512)],
+      ['per-key colour write', 'feature', 0x06, frame(0x06, 0, 378)],
       ['direct LED frame', 'feature', 0x06, frame(0x08, 0, 378)],
+      ['streaming command 0x0e', 'feature', 0x06, frame(0x0e, 0, 378)],
+      ['screen image page', 'feature', 0x06, frame(0x0c, 0, 512)],
+      ['battery read', 'feature', 0x06, frame(0x87, 0x02, 2)],
       ['unknown command', 'feature', 0x06, frame(0x7f, 0, 0)],
       ['settings page without its end marker', 'feature', 0x06, frame(0x04, 0, 128)],
       ['dongle frame', 'output', 0x13, new Uint8Array(19)],

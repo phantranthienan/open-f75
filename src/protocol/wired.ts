@@ -16,7 +16,16 @@
  * much to return), then a GET_FEATURE on the same report ID. The reply repeats
  * the header and carries the data from byte 8.
  *
+ * AULA's driver builds exactly this frame for the F75 (profile Fw=24; other
+ * firmwares get report ID 9), waits 20 ms before every SET_FEATURE and again
+ * before the GET_FEATURE, and tries a failed SET_FEATURE 3 times, 70 ms apart
+ * [DRV].
+ *
  * Sources:
+ *   [DRV]  AULA's F75 driver, OemDrv.exe from "AULA F75 Setup v2.0 20260514.exe"
+ *          (SHA-256 1dfe4803...ae44a7), class CDevG5KB (FUN_004993c0 and the
+ *          read functions next to it), decompiled with Ghidra 12.1.4; never run.
+ *          See docs/reverse-engineering/report.md
  *   [ASL]  references/AulaSofwareLinux/src/proto.rs, recovered from AULA's own
  *          driver (OemDrv.exe) and verified on an F75
  *   [ORGB] references/OpenRGB/Controllers/SinowealthController/SinowealthControllerDetect.cpp,
@@ -38,7 +47,7 @@ export const DATA_LENGTH = REPORT_LENGTH - 1
 export const HEADER_LENGTH = 8
 export const MAX_PAYLOAD = 512
 
-/** The commands this app uses [ASL]. */
+/** The commands this app uses [ASL] [DRV]. */
 export const Cmd = {
   GetInfo: 0x82,
   GetSettings: 0x84,
@@ -48,9 +57,11 @@ export const Cmd = {
 } as const
 
 /**
- * Known but deliberately unused, so the guard refuses them [ASL]:
- * 0x03/0x83 key matrix, 0x05/0x85 macros, 0x06/0x86 game mode, 0x08 direct
- * LEDs (Phase 5), 0x0b screen, 0x11 factory reset, 0x87 battery.
+ * Known but deliberately unused, so the guard refuses them [DRV]: 0x03/0x83
+ * key matrix (parameter = layer), 0x05/0x85 macros, 0x06/0x86 per-key colours
+ * (parameter = group; the driver's log calls it "SetGame"), 0x08 direct LEDs,
+ * 0x0b/0x0c/0x0d screen, 0x0e/0x0f, 0x11 factory reset, 0x87 battery,
+ * 0x88 "GetRealData".
  *
  * Firmware updates never use this channel [UPD]. The updater sends
  * `05 75 00 00 00 00` ('u') on feature report 0x05 to the running board to
@@ -61,11 +72,11 @@ export const Cmd = {
  * 258A:010C, so none of that can be sent.
  */
 
-/** GET_INFO parameter that returns the 6-byte model identity [ASL]. */
+/** GET_INFO parameter that returns the 6-byte model identity [ASL] [DRV]. */
 export const INFO_IDENTITY = 0x01
 export const IDENTITY_LENGTH = 6
 
-/** Delay AULA's driver leaves before every transfer [ASL]. */
+/** Delay AULA's driver leaves before every transfer [ASL] [DRV]. */
 export const TRANSFER_DELAY_MS = 20
 
 export interface Header {
@@ -112,7 +123,7 @@ export function buildWrite(cmd: number, param: number, data: Uint8Array): Uint8A
   return frame(cmd, param, data.length, data)
 }
 
-/** `06 82 01 00 01 00 06 00`, byte for byte what [ASL] and [ORGB] send. */
+/** `06 82 01 00 01 00 06 00`, byte for byte what [DRV], [ASL] and [ORGB] send. */
 export function buildIdentityRequest(): Uint8Array {
   return buildReadRequest(Cmd.GetInfo, INFO_IDENTITY, IDENTITY_LENGTH)
 }

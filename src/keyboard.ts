@@ -150,7 +150,7 @@ export class Keyboard {
       this.log.add(
         'info',
         plan.custom
-          ? 'Plan: custom colour into colour table row 1, slot 0 (unconfirmed path), then select slot 0'
+          ? "Plan: custom colour into colour table row 1, slot 0, then select slot 0 (as AULA's driver does)"
           : `Plan: select firmware colour ${plan.colorIndex} (${COLOR_NAMES[plan.colorIndex]}); settings page only`,
       )
       for (const c of plan.changes) {

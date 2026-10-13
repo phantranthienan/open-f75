@@ -2,28 +2,40 @@
  * What the board stores: the settings page and the colour table. Pure functions only.
  *
  * SETTINGS PAGE: 128 bytes, read with 0x84 and written with 0x04, ending in 5A A5.
- *   0x0a        live effect, as its 1-based position in AULA's effect list
- *               ("Fixed on" = 1)                                    [ASL] confirmed on an F75
- *   0x18        sleep timeout                                       [ASL] confirmed on an F75
+ * AULA's driver reads it, patches these fields and writes it back [DRV]:
+ *   0x03        debounce, 0x01 in AULA's profile and on the owner's board [DRV]
+ *   0x09        1 while the per-key effect is live, else 0           [DRV]
+ *   0x0a        live effect: the first number of the effect's LedOptN line in
+ *               AULA's profile. 1..18 are the effects in list order ("Fixed
+ *               on" = 1), 21 is per-key, 0 is off                    [DRV] [ASL] confirmed on an F75
+ *   0x0b        0x20 + per-key colour group (0x20 on the F75)        [DRV]
+ *   0x18        sleep timeout in SleepHW units, 0 = never            [DRV] [ASL] confirmed on an F75
  *   0x38..0x39  FF FF
- *   0x3a..      per-effect [brightness, speed << 4 | colour] pairs,
- *               slot = effect - 1                                   [ASL] confirmed with Fn+Tab
+ *   0x3a..      one [brightness, speed << 4 | colour] pair per effect, in list
+ *               order (EFFECT_VALUES): effect 1..18 at slot effect - 1,
+ *               per-key at slot 18                                   [DRV] [ASL] confirmed with Fn+Tab
  *   0x7e..0x7f  5A A5 end marker
- *   The colour nibble selects one of 7 colours (0 red ... 6 white), 7 = colourful.
+ *   The colour nibble picks a slot in the effect's colour-table row, 7 = colourful.
+ *   In the default row slot n is firmware colour n (0 red ... 6 white). AULA's
+ *   driver only writes 0 or 7 and puts the chosen colour in slot 0 [DRV]; the
+ *   firmware's Fn keys use the other slots too [ASL].
  *   Over the 2.4 GHz dongle the same 128 bytes travel as ten 14-byte
- *   fragments of report 0x13 [F87-CAP], and the offsets line up.
+ *   fragments of report 0x13 [F87-CAP] [DRV], and the offsets line up.
  *
- * COLOUR TABLE: 512 bytes, read with 0x8a and written with 0x0a.
- *   Rows of 7 RGB colours (21 bytes per row: red green blue yellow magenta
- *   cyan white) with 5A A5 at 506. First inferred from the OEM app's palette
- *   writes on an F87 [F87-CAP]; the table read off the owner's F75 has exactly
- *   this layout, rows 1 to 13 [OWNER]. For "Fixed on, custom colour" the OEM
- *   app put the colour in row 1, slot 0 (offset 21) and selected colour 0
- *   [F87-CAP]. The F75 projects disagree on what 0x0a holds ([RS] colour
- *   slots, [ASL] per-key colours), so custom colours are only written when the
- *   board's own table has this layout (colorTableMatchesLayout).
+ * COLOUR TABLE: 512 bytes, read with 0x8a and written with 0x0a (the driver's
+ *   GetLedRgbTab / SetLedRgbTab). One row of 7 RGB colours (21 bytes) per
+ *   effect, at row = the effect's 0x0a value, so Fixed on is row 1 (offsets
+ *   21..41). The driver fills 20 rows (420 bytes) and pads them to 512 with
+ *   5A A5 at 506 [DRV]. For "Fixed on, custom colour" it puts the colour in
+ *   row 1, slot 0 and selects slot 0 [DRV], as the OEM app did on an F87
+ *   [F87-CAP]. So [RS] was right and [ASL]'s per-key reading is not. The table
+ *   read off the owner's F75 has this layout [OWNER]; colorTableMatchesLayout
+ *   still checks a board's table before a custom colour is written into it.
  *
  * Sources:
+ *   [DRV]     AULA's F75 driver, OemDrv.exe from "AULA F75 Setup v2.0 20260514.exe"
+ *             (SHA-256 1dfe4803...ae44a7), decompiled with Ghidra 12.1.4, never run.
+ *             Function addresses in docs/reverse-engineering/report.md
  *   [ASL]     references/AulaSofwareLinux/src/config_page.rs, F75 dump and tests
  *   [KBINI]   references/AulaSofwareLinux/assets/devices/f75-fr/device.ini, AULA's F75 profile
  *             (LedOpt1 = Fixed on, Light 0..9, Speed 0..4)
@@ -40,13 +52,22 @@ export const COLOR_TABLE_LENGTH = 512
 const END_MARKER = [0x5a, 0xa5]
 
 export const SettingsOffset = {
+  perKeyMode: 0x09,
   effect: 0x0a,
   effectTable: 0x3a,
   endMarker: SETTINGS_LENGTH - 2,
 } as const
 
-/** Position of "Fixed on" in AULA's F75 effect list [KBINI LedOpt1]. */
+/** The 0x0a value of "Fixed on" [KBINI LedOpt1] [DRV]. */
 export const FIXED_ON = 1
+/** The 0x0a value of the per-key effect [KBINI LedOpt19] [DRV]. */
+export const PER_KEY = 21
+/**
+ * The 0x0a value of each effect that has a settings slot, in slot order: the
+ * first numbers of LedOpt1..LedOpt19 [KBINI]. The driver fills slots by this
+ * position, not by the value [DRV]. Off (0, LedOpt20) has no slot.
+ */
+export const EFFECT_VALUES: readonly number[] = [...Array.from({ length: 18 }, (_, i) => i + 1), PER_KEY]
 /** Colour nibble value meaning "colourful" [ASL]. */
 export const COLORFUL = 7
 
@@ -85,9 +106,9 @@ export interface EffectSlot {
 }
 
 function slotOffset(effect: number): number {
-  const at = SettingsOffset.effectTable + (effect - 1) * 2
-  if (effect < 1 || at + 2 > SettingsOffset.endMarker) throw new RangeError(`no settings slot for effect ${effect}`)
-  return at
+  const slot = EFFECT_VALUES.indexOf(effect)
+  if (slot < 0) throw new RangeError(`no settings slot for effect ${effect}`)
+  return SettingsOffset.effectTable + slot * 2
 }
 
 export function effectSlot(page: Uint8Array, effect: number): EffectSlot {
@@ -139,7 +160,7 @@ export function describeBoard(settings: Uint8Array, table: Uint8Array | null): B
   try {
     slot = effectSlot(settings, effect)
   } catch {
-    // effect 0 (off) or a number past the table
+    // effect 0 (off) or a value with no slot
   }
   let color: Rgb | null = null
   if (effect === FIXED_ON && slot && slot.color < COLORFUL) {
@@ -170,7 +191,7 @@ export interface StaticColorPlan {
   /** Patched colour table, or null when the table does not need writing. */
   colorTable: Uint8Array | null
   colorIndex: number
-  /** True when the colour goes into the colour table (the unconfirmed path). */
+  /** True when the colour goes into the colour table (row 1, slot 0, as AULA's driver does). */
   custom: boolean
   changes: Change[]
   warnings: string[]
@@ -183,8 +204,11 @@ export interface StaticColorPlan {
  * 1. The colour is already in the Fixed-on row (red, green, ... by default):
  *    select it with the colour nibble. Settings page only; confirmed path.
  * 2. Otherwise, if the board's table matches the expected layout, put the
- *    colour in slot 0 of that row and select slot 0, as the OEM app does.
+ *    colour in slot 0 of that row and select slot 0, as AULA's driver does.
  * 3. Otherwise only the seven firmware colours are possible.
+ *
+ * Either way the effect becomes Fixed on, and the per-key flag at 0x09 is
+ * cleared, as the driver does for every effect but per-key [DRV].
  */
 export function planStaticColor(settings: Uint8Array, colorTable: Uint8Array | null, rgb: Rgb): StaticColorPlan {
   assertSettingsPage(settings)
@@ -211,6 +235,7 @@ export function planStaticColor(settings: Uint8Array, colorTable: Uint8Array | n
 
   const next = Uint8Array.from(settings)
   next[SettingsOffset.effect] = FIXED_ON
+  next[SettingsOffset.perKeyMode] = 0
   const at = slotOffset(FIXED_ON)
   next[at + 1] = (next[at + 1] & 0xf0) | colorIndex
 

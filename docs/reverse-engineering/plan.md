@@ -1,5 +1,7 @@
 # Reverse-engineering AULA's F75 driver: plan
 
+**Done 2026-10-13.** The results are in [report.md](report.md). The download link on AULA's page points to MediaFire (`www.mediafire.com`, served from `download*.mediafire.com`). REA couldn't be installed in that session, so Ghidra's headless analyser ran with `scripts/ghidra/ExportAll.java` instead.
+
 Goal: decompile AULA's Windows driver for the F75 (statically, never run) to confirm or correct what the app assumes about the protocol, then write `docs/reverse-engineering/report.md`: a reference detailed enough to build the next features (all effects, brightness and speed, per-key colour, key remapping, macros, live effects).
 
 ## Rules
