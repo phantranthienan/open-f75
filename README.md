@@ -295,6 +295,8 @@ src/
       utils.ts             cn(), the class-name helper shadcn uses
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
+scripts/rea-bridge.py      keeps one REA/Ghidra session open for static analysis of AULA's binaries
+docs/reverse-engineering/  the plan (and later the report) for decompiling AULA's driver
 references/                the reference projects, as git submodules
 index.html                 the page, plus the small script that applies the saved theme before paint
 vite.config.ts             React, Tailwind, the '@' alias and the raw-send check
