@@ -1,12 +1,12 @@
-import { F87_IDENTITY, connect, connectF75, expect, openWithBoard, sent, test } from '@test/fixtures/app'
+import { CONNECT_COMMANDS, F87_IDENTITY, commands, connect, connectF75, expect, openWithBoard, sent, test } from '@test/fixtures/app'
 
 test.describe('connecting over WebHID', () => {
-  test('identifies an F75 with a single identity read', async ({ page }) => {
+  test('identifies an F75 with one identity read, then reads its lighting', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
 
     const reports = await sent(page)
-    expect(reports).toHaveLength(1)
+    expect(await commands(page)).toEqual(CONNECT_COMMANDS)
     const [identity] = reports
     expect(identity).toMatchObject({ type: 'feature', reportId: 0x06 })
     expect(identity.data).toHaveLength(519)
@@ -85,6 +85,6 @@ test.describe('connecting over WebHID', () => {
     await page.waitForTimeout(300)
 
     await expect(page.getByRole('log').getByText(/^Connected via WebHID/)).toHaveCount(1)
-    expect(await sent(page)).toHaveLength(1)
+    expect(await commands(page)).toEqual(CONNECT_COMMANDS)
   })
 })

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { BOARD, F87_IDENTITY, commands, connect, connectF75, expect, openWithBoard, test } from '@test/fixtures/app'
+import { BOARD, CONNECT_COMMANDS, F87_IDENTITY, READ_LIGHTING, commands, connect, connectF75, expect, openWithBoard, test } from '@test/fixtures/app'
 
 const hex = (bytes: number[]) => Buffer.from(bytes).toString('hex')
 
@@ -17,7 +17,7 @@ test.describe('backup', () => {
     expect(backup.settings).toBe(hex(BOARD.settings))
     expect(backup.colorTable).toBe(hex(BOARD.colorTable))
     expect(download.suggestedFilename()).toMatch(/^open-f75-backup-\d{8}-\d{6}\.json$/)
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
   })
 
   test('is not offered for a board that is not an F75', async ({ page }) => {

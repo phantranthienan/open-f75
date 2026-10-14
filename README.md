@@ -5,11 +5,12 @@ A web page that sets the lighting on an AULA F75 keyboard over the USB cable, ma
 What it does today:
 
 - connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
+- reads the board's lighting, so the controls start from what the board shows
+- sets any of the 18 built-in effects (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
 - backs up the board's settings page and colour table as JSON
-- sets the "Fixed on" effect to one colour, saved on the board: one of the seven firmware colours, or any colour through the colour table
 - shows every frame as hex in a packet log. Dry run is on whenever the page loads.
 
-Other effects, brightness, speed, per-key colour and the desktop app are not built yet.
+Per-key colour and the desktop app are not built yet. No F75 effect has a direction setting.
 
 ## Contents
 
@@ -52,9 +53,9 @@ The reference projects are git submodules. You only need them to read the source
 3. The **device** pane runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If all three pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
 4. **Copy JSON** on the device pane and keep it. It is the record of what your board exposes.
 5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table. Do this before the first write.
-6. Pick a colour on the wheel (or type one) and press **Dry run**. The app reads the board for real, then logs the bytes it would change and the frames it would write, without sending them.
+6. The **lighting** pane already shows what the board shows: right after the identity check the app reads the settings page and the colour table (reads only). Pick a colour on the wheel (or type one) and press **Dry run**. The app reads the board again, then logs the bytes it would change and the frames it would write, without sending them.
 7. Turn dry run off in the top bar and send green (`#00ff00`). On a board like the owner's it changes one settings byte, the best-proven path. Then unplug and replug to check that it stays.
-8. Only then try a custom colour, which also writes the colour table (see [the two paths](#setting-a-colour-the-two-paths)), and replug again. Change one thing at a time.
+8. Only then try a custom colour, which also writes the colour table (see [the two paths](#setting-a-colour-the-two-paths)), and replug again. Then other effects, brightness and speed. Change one thing at a time.
 
 ## How it fits together
 
@@ -101,9 +102,13 @@ INFO  Connected via WebHID: Gaming Keyboard (0x258A:0x010C)
 TX    identity read                    06 82 01 00 01 00 06 00
 RX    reply to 0x82 (14 bytes)         06 82 01 00 01 00 06 00 03 00 00 00 00 cd
 INFO  Identity 03 00 00 00 00 cd: AULA F75
+TX    settings read                    06 84 00 00 01 00 80 00
+RX    reply to 0x84 (136 bytes)        06 84 00 00 01 00 80 00 + 128 bytes of settings
+TX    colour table read                06 8a 00 00 01 00 00 02
+RX    reply to 0x8a (520 bytes)        06 8a 00 00 01 00 00 02 + 512 bytes of colour table
 ```
 
-On **Dry run** (or **Send to keyboard**):
+On **Dry run** (or **Send to keyboard**), with Fixed on and `#ff6600`:
 
 ```
 TX    settings read                    06 84 00 00 01 00 80 00
@@ -123,12 +128,12 @@ With dry run off, the two `DRY` lines become `TX`. The app then reads both regio
 
 The code path behind that one click:
 
-1. `ColorPane.onSend` (`src/ui/components/color-pane.tsx`) calls `session.applyLighting({ effect, color })`.
+1. `LightingPane.onSend` (`src/ui/components/lighting-pane.tsx`) calls `session.applyLighting(lighting.choice)`. The choice (effect, brightness, speed, colour) comes from `useLighting` (`src/ui/hooks/use-lighting.ts`), which starts from the board's last read.
 2. `useSession` (`src/ui/hooks/use-session.ts`) runs it on the `Keyboard`, marks the app busy and turns any error into a message.
 3. `Keyboard.applyLighting` (`src/keyboard.ts`) reads the settings page and the colour table, then calls `planLighting`.
 4. `planLighting` (`src/protocol/lighting.ts`) returns the regions to write, in order, and the list of changed bytes. It does no I/O.
 5. Each write goes through `SafeSend` (`src/safe-send.ts`), then `WebHidTransport.send` (`src/transports/webhid.ts`), then `HIDDevice.sendFeatureReport`.
-6. `Keyboard.verify` reads the written regions back and compares.
+6. `Keyboard.verify` reads the written regions back and compares. The session keeps what it read back, so the controls show the board's new state.
 
 ## The protocol
 
@@ -190,6 +195,21 @@ Read with `0x84`, written with `0x04`. It always ends in `5A A5`, and a page wit
 
 So Fixed on is the slot at `0x3a`: brightness at `0x3a`, and speed (high nibble) plus colour (low nibble) at `0x3b`. The colour nibble picks one of 7 colours, `0` red, `1` green, `2` blue, `3` yellow, `4` magenta, `5` cyan, `6` white, or `7` for colourful. The owner's board reads `07 46` there: brightness 7, speed 4, colour 6.
 
+### Effects
+
+`src/protocol/effects.ts` lists the F75's effects in the order of AULA's profile. The value goes into settings byte `0x0a`, and it is also the effect's colour-table row. The slot is where the effect keeps its brightness and speed: slot `n` is at `0x3a + 2n`.
+
+| Value | Effect | Slot | Brightness | Speed | Colour | Colourful |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Fixed on | 0 | ✓ | – | ✓ | ✓ |
+| 2, 4–8, 10–13 | Breathing, Flash away, Raindrops, Rainbow wheel, Ripples shining, Stars twinkle, Retro snake, Neon stream, Reaction, Sine wave | value − 1 | ✓ | ✓ | ✓ | ✓ |
+| 3, 15, 16, 17 | Rainbow, Rotating windmill, Colorful waterfall, Blossoming | value − 1 | ✓ | ✓ | – | – |
+| 9, 14, 18 | Shadow disappear, Retinue scanning, Rotating storm | value − 1 | ✓ | ✓ | – | ✓ |
+| 21 | Per-key | 18 | – | – | – | – |
+| 0 | Off | – | – | – | – | – |
+
+Brightness runs 0–9 and speed 0–4. AULA's driver writes no colour-table row for effects 9, 14 and 18 (its profile masks them), so they offer only colourful, or their own colours. The [report](docs/reverse-engineering/report.md#9-effects) has the evidence.
+
 ### Colour table (512 bytes)
 
 Read with `0x8a`, written with `0x0a`. It is laid out in rows of 7 RGB colours (21 bytes per row, slots in the firmware order above), with `5A A5` at offset 506. Row 1 (offsets 21–41) belongs to Fixed on: the colour nibble picks a slot in that row.
@@ -248,7 +268,7 @@ Read in this order. Each step builds on the one before. The line counts are roug
 | What exactly can the app send? | `src/allowlist.ts` |
 | Why did the app refuse to send? | the device pane and `src/device-check.ts`; `BLOCK` lines in the log and `inspect()` in `src/allowlist.ts` |
 | How does a colour become bytes? | `planLighting` in `src/protocol/lighting.ts` |
-| What happens when I click Send? | `color-pane.tsx` → `use-session.ts` → `Keyboard.applyLighting` ([walkthrough](#one-colour-change-frame-by-frame)) |
+| What happens when I click Send? | `lighting-pane.tsx` → `use-session.ts` → `Keyboard.applyLighting` ([walkthrough](#one-colour-change-frame-by-frame)) |
 | How does dry run work? | `src/safe-send.ts`, and `dryRunRef` in `src/ui/hooks/use-session.ts` |
 | How does the build stop raw sends? | `scripts/raw-sends.mjs`, used by `vite.config.ts` and `npm run lint` |
 | What is in the backup file? | `Backup` and `backup()` in `src/keyboard.ts`; `src/ui/components/backup-pane.tsx` |
@@ -275,7 +295,7 @@ src/
   allowlist.ts             the five commands that may reach the board; inspect() and assertAllowed()
   safe-send.ts             the guard: allowlist, dry run, hex log. The only caller of Transport.send
   device-check.ts          the checks that gate every send (shown in the device pane)
-  keyboard.ts              identify, backup, set static colour, read back; retries and delays
+  keyboard.ts              identify, read the board, apply lighting, backup, read back; retries and delays
   log.ts                   the packet log store (framework-free)
   transport.ts             the Transport interface and device description types
   transports/
@@ -284,12 +304,14 @@ src/
     App.tsx                the one-screen layout: top bar, four panes, status line
     hooks/
       use-session.ts       wires transport, guard, keyboard and log for the UI
+      use-lighting.ts      the lighting being edited, loaded from each read of the board
       use-saved-colors.ts  saved colours in localStorage
       use-theme.ts         the theme, in localStorage, applied to <html data-theme>
     components/
       top-bar.tsx          title, connection light, theme switcher, dry-run switch, Connect
       device-pane.tsx      checks, identity, HID collections, Copy JSON
-      color-pane.tsx       wheel, hex, saved colours, Dry run / Send to keyboard
+      lighting-pane.tsx    effect, brightness, speed, colourful, the colour picker, Dry run / Send to keyboard
+      color-picker.tsx     wheel, swatch, hex field and saved colours
       color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
       backup-pane.tsx      Back up config, downloads the JSON
       log-pane.tsx         the packet log: follows new lines, copy, clear
@@ -321,7 +343,7 @@ One screen, laid out like a terminal dashboard:
 
 - **Top bar:** the name, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
-- **colour:** the wheel, a swatch, the hex field and its RGB value. Then your saved colours, a line saying which path the colour will probably take, and **Dry run** or **Send to keyboard**. That button is amber while dry run is on.
+- **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). Then the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. Below that the wheel, a swatch, the hex field and its RGB value, your saved colours, a line saying what Send will write, and **Dry run** or **Send to keyboard**. That button is amber while dry run is on. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
 - **backup:** **Back up config**. It only reads.
 - **packet log:** every frame and status line with a time stamp. `TX` sent, `RX` received, `DRY` held back by dry run, `BLOCK` refused by the allowlist, `ERR` and `INFO`. Frames longer than 48 bytes fold to a preview; click to see all of them. The log follows new lines while you're at the bottom and stays put when you scroll up. Use the icons for **Copy log** and **Clear log**.
 - **Status line:** `DRY RUN` or `LIVE`, the board's model, idle or working, and counts of tx, rx, dry and blocked frames.
@@ -351,8 +373,10 @@ test/
   connect/           identity read, reply formats, other models and product IDs,
                      no auto-connect, unplug, no WebHID
   safety/            the transport refuses everything off the allowlist, even with the guard bypassed
-  static-color/      dry run, firmware colour (one byte), custom colour, leaving the per-key
-                     effect, no-op, a board that ignores writes, a colour table with another layout
+  static-color/      Fixed on: dry run, firmware colour (one byte), custom colour, leaving the
+                     per-key effect, no-op, a board that ignores writes, a colour table with another layout
+  lighting/          starting from the board, another effect with its own values, a custom colour
+                     in the effect's own row, effects without a colour, off, Read board
   backup/            the downloaded JSON, reads only; not offered for another model
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage

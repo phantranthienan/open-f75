@@ -141,3 +141,31 @@ export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null
 
   return { writes, changes, warnings, colorPath: pick?.path ?? null, colorIndex: pick?.nibble ?? null }
 }
+
+/** What the board holds for one effect, as the controls show it. */
+export interface EffectState {
+  brightness: number
+  speed: number
+  colorful: boolean
+  /** The colour the nibble selects, or null when the effect has no colour or is colourful. */
+  color: Rgb | null
+}
+
+/** Decodes an effect's slot (and its colour from the colour table), or null for an effect without a slot. */
+export function readEffectState(settings: Uint8Array, colorTable: Uint8Array | null, effect: Effect): EffectState | null {
+  assertSettingsPage(settings)
+  if (effect.slot === null) return null
+  const slot = readSlot(settings, effect)
+  const colorful = slot.color === COLORFUL
+  let color: Rgb | null = null
+  if (effect.color && slot.color < FIRMWARE_COLORS.length) {
+    const row = colorTable && rowMatchesLayout(colorTable, effect.value) ? colorRow(colorTable, effect.value) : FIRMWARE_COLORS
+    color = row[slot.color]
+  }
+  return {
+    brightness: Math.min(slot.brightness, MAX_BRIGHTNESS),
+    speed: Math.min(slot.speed, MAX_SPEED),
+    colorful,
+    color,
+  }
+}

@@ -43,9 +43,20 @@ export async function connect(page: Page) {
   await page.getByRole('button', { name: 'Connect' }).click()
 }
 
+/** Connects, and waits until the board has identified and its lighting has been read. */
 export async function connectF75(page: Page) {
   await connect(page)
   await expect(page.getByText('This is an F75.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Read board' })).toBeEnabled()
+}
+
+/** The commands connectF75 sends: identity, then settings page and colour table. */
+export const CONNECT_COMMANDS = [0x82, 0x84, 0x8a]
+/** The reads every lighting change starts with. */
+export const READ_LIGHTING = [0x84, 0x8a]
+
+export async function selectEffect(page: Page, name: string) {
+  await page.getByLabel('Effect').selectOption({ label: name })
 }
 
 /** Every report the app sent to the fake board, in order. */

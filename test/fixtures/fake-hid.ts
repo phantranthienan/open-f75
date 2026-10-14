@@ -38,6 +38,8 @@ export interface FakeBoard {
 export interface FakeHidHandle {
   sent: SentReport[]
   state(): { settings: number[]; colorTable: number[] }
+  /** Changes the board's settings page, as its own Fn keys would. */
+  setSettings(settings: number[]): void
   unplug(): void
   /** Fires navigator.hid's "connect" event for the board, as Chrome does on plug-in. */
   announce(): void
@@ -144,6 +146,9 @@ export function installFakeHid(board: FakeBoard): void {
   window.__fakeHid = {
     sent,
     state: () => ({ settings: [...settings], colorTable: [...colorTable] }),
+    setSettings: (next) => {
+      settings = [...next]
+    },
     unplug: () => {
       device.opened = false
       hid.dispatchEvent(Object.assign(new Event('disconnect'), { device }))

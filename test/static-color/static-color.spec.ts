@@ -1,5 +1,7 @@
 import {
   BOARD,
+  CONNECT_COMMANDS,
+  READ_LIGHTING,
   boardState,
   changedOffsets,
   commands,
@@ -7,6 +9,7 @@ import {
   expect,
   openWithBoard,
   pickColor,
+  selectEffect,
   sendColor,
   sent,
   setDryRun,
@@ -26,7 +29,7 @@ test.describe('static colour over WebHID', () => {
 
     await expect(page.getByText(/^Dry run \(firmware colour/)).toBeVisible()
     await expect(page.getByRole('log')).toContainText('settings 0x3b: 0x46 -> 0x41')
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
     expect(await boardState(page)).toEqual({ settings: BOARD.settings, colorTable: BOARD.colorTable })
   })
 
@@ -37,8 +40,8 @@ test.describe('static colour over WebHID', () => {
     await pickColor(page, '#00ff00')
     await sendColor(page)
 
-    await expect(page.getByText('Saved #00ff00 (firmware colour')).toBeVisible()
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a, SETTINGS_WRITE, 0x84])
+    await expect(page.getByText('Saved Fixed on in #00ff00 (firmware colour')).toBeVisible()
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING, SETTINGS_WRITE, 0x84])
 
     const write = (await sent(page)).find((r) => r.data[0] === SETTINGS_WRITE)!
     const written = payloadOf(write.data, 128)
@@ -56,8 +59,8 @@ test.describe('static colour over WebHID', () => {
     await pickColor(page, '#123456')
     await sendColor(page)
 
-    await expect(page.getByText('Saved #123456 (custom colour')).toBeVisible()
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a, COLOR_TABLE_WRITE, SETTINGS_WRITE, 0x8a, 0x84])
+    await expect(page.getByText('Saved Fixed on in #123456 (custom colour')).toBeVisible()
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING, COLOR_TABLE_WRITE, SETTINGS_WRITE, 0x8a, 0x84])
 
     const tableWrite = (await sent(page)).find((r) => r.data[0] === COLOR_TABLE_WRITE)!
     const table = payloadOf(tableWrite.data, 512)
@@ -73,11 +76,13 @@ test.describe('static colour over WebHID', () => {
     perKey[0x0a] = 21
     await openWithBoard(page, { settings: perKey })
     await connectF75(page)
+    await expect(page.getByLabel('Effect')).toHaveValue('21') // the controls start from the board
     await setDryRun(page, false)
+    await selectEffect(page, 'Fixed on')
     await pickColor(page, '#00ff00')
     await sendColor(page)
 
-    await expect(page.getByText('Saved #00ff00 (firmware colour')).toBeVisible()
+    await expect(page.getByText('Saved Fixed on in #00ff00 (firmware colour')).toBeVisible()
     const write = (await sent(page)).find((r) => r.data[0] === SETTINGS_WRITE)!
     const written = payloadOf(write.data, 128)
     expect(changedOffsets(perKey, written)).toEqual([0x09, 0x0a, 0x3b])
@@ -93,8 +98,8 @@ test.describe('static colour over WebHID', () => {
     await pickColor(page, '#ffffff')
     await sendColor(page)
 
-    await expect(page.getByText('The board already shows #ffffff on Fixed on. Nothing was written.')).toBeVisible()
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
+    await expect(page.getByText('The board already shows Fixed on in #ffffff. Nothing was written.')).toBeVisible()
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
   })
 
   test('reports a board that does not keep the write', async ({ page }) => {
@@ -115,6 +120,6 @@ test.describe('static colour over WebHID', () => {
     await sendColor(page)
 
     await expect(page.getByText(/^Stopped: Custom colours need/)).toBeVisible()
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
   })
 })

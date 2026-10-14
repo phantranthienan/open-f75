@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Assessment, IdentityState } from '@/device-check'
-import { Keyboard, type ApplyResult, type Backup } from '@/keyboard'
+import { Keyboard, type ApplyResult, type Backup, type BoardState } from '@/keyboard'
 import { createLog } from '@/log'
 import type { LightingChoice, LightingPlan } from '@/protocol/lighting'
 import { createSafeSend } from '@/safe-send'
@@ -18,6 +18,8 @@ export function useSession() {
   const [keyboard, setKeyboardState] = useState<Keyboard | null>(null)
   const [assessment, setAssessment] = useState<Assessment | null>(null)
   const [identity, setIdentity] = useState<IdentityState | null>(null)
+  /** What the board last returned; null until it has been read. */
+  const [board, setBoard] = useState<BoardState | null>(null)
   const keyboardRef = useRef<Keyboard | null>(null)
   const setKeyboard = useCallback((next: Keyboard | null) => {
     keyboardRef.current?.dispose()
@@ -25,6 +27,7 @@ export function useSession() {
     setKeyboardState(next)
     setAssessment(next?.assessment ?? null)
     setIdentity(next?.identity ?? null)
+    setBoard(null)
   }, [])
   const [busy, setBusy] = useState(false)
 
@@ -58,15 +61,25 @@ export function useSession() {
     }
   }, [])
 
-  /** Connects the keyboard layer, then sends the one command allowed before identification. */
+  /**
+   * Connects the keyboard layer and sends the one command allowed before
+   * identification. Once the board is known to be an F75, reads its lighting
+   * so the controls start from what the board shows.
+   */
   const attach = useCallback(
     (device: DeviceInfo) => {
       const send = createSafeSend({ transport, log, isDryRun: () => dryRunRef.current })
       const kb = new Keyboard({ transport, send, log, device })
       setKeyboard(kb)
       log.add('info', `Connected via ${transport.name}: ${device.name} (${formatId(device.vendorId)}:${formatId(device.productId)})`)
-      if (kb.assessment.canIdentify) void run('Identify', (k) => k.identify())
-      else log.add('error', 'The descriptor checks failed; nothing will be sent to this device')
+      if (!kb.assessment.canIdentify) {
+        log.add('error', 'The descriptor checks failed; nothing will be sent to this device')
+        return
+      }
+      void run('Identify', async (k) => {
+        await k.identify()
+        if (k.assessment.canSend) setBoard(await k.readBoard())
+      })
     },
     [transport, setKeyboard, run],
   )
@@ -102,9 +115,23 @@ export function useSession() {
     log.add('info', 'Disconnected')
   }, [transport, setKeyboard])
 
+  const readBoard = useCallback(
+    (): Promise<Outcome<BoardState>> =>
+      run('Read board', async (kb) => {
+        const state = await kb.readBoard()
+        setBoard(state)
+        return state
+      }),
+    [run],
+  )
+
   const applyLighting = useCallback(
     (choice: LightingChoice): Promise<Outcome<{ result: ApplyResult; plan: LightingPlan }>> =>
-      run('Lighting', (kb) => kb.applyLighting(choice)),
+      run('Lighting', async (kb) => {
+        const { board: after, ...outcome } = await kb.applyLighting(choice)
+        setBoard(after)
+        return outcome
+      }),
     [run],
   )
 
@@ -117,6 +144,7 @@ export function useSession() {
     assessment,
     identity,
     connected: keyboard !== null,
+    board,
     busy,
     dryRun,
     setDryRun,
@@ -124,6 +152,7 @@ export function useSession() {
     clearLog: log.clear,
     connect,
     disconnect,
+    readBoard,
     applyLighting,
     backup,
   }

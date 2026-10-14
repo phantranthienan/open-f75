@@ -43,6 +43,13 @@ export interface Backup {
 
 export type ApplyResult = SendResult | 'unchanged'
 
+/** The regions the lighting lives in, as the board last returned them. */
+export interface BoardState {
+  settings: Uint8Array
+  /** Null when the colour table could not be read; only firmware colours are possible then. */
+  colorTable: Uint8Array | null
+}
+
 export interface KeyboardOptions {
   transport: Transport
   send: SafeSend
@@ -120,34 +127,38 @@ export class Keyboard {
     })
   }
 
-  readSettings(): Promise<Uint8Array> {
-    return this.exclusive(() => this.readSettingsUnlocked())
+  /** The settings page and the colour table, for the UI to show what the board shows. Reads only. */
+  readBoard(): Promise<BoardState> {
+    return this.exclusive(() => this.readBoardUnlocked())
   }
 
-  /** An effect with its brightness, speed and colour, saved on the board. See planLighting. */
-  applyLighting(choice: LightingChoice): Promise<{ result: ApplyResult; plan: LightingPlan }> {
+  /**
+   * An effect with its brightness, speed and colour, saved on the board. See
+   * planLighting. Returns the board as read back, or as read before a dry run.
+   */
+  applyLighting(choice: LightingChoice): Promise<{ result: ApplyResult; plan: LightingPlan; board: BoardState }> {
     return this.exclusive(async () => {
       this.log.add('info', `${describeChoice(choice)}: reading settings and colour table`)
-      const settings = await this.readSettingsUnlocked()
-      let table: Uint8Array | null = null
-      try {
-        table = await this.readColorTableUnlocked()
-      } catch (err) {
-        if (err instanceof BlockedPacketError) throw err
-        this.log.add('info', `Colour table unavailable (${message(err)}); only firmware colours are possible`)
-      }
-
-      const plan = planLighting(settings, table, choice)
+      const before = await this.readBoardUnlocked()
+      const plan = planLighting(before.settings, before.colorTable, choice)
       plan.warnings.forEach((w) => this.log.add('error', w))
       if (plan.changes.length === 0) {
         this.log.add('info', 'The board already shows this; nothing to write')
-        return { result: 'unchanged', plan }
+        return { result: 'unchanged', plan, board: before }
       }
       this.log.add('info', `Plan: ${describePlan(plan)}`)
       for (const c of plan.changes) {
         this.log.add('info', `  ${c.region} ${offset(c.offset)}: ${offset(c.from)} -> ${offset(c.to)}`)
       }
-      return { result: await this.commit(plan), plan }
+      const { result, readBack } = await this.commit(plan)
+      return {
+        result,
+        plan,
+        board: {
+          settings: readBack.get('settings') ?? before.settings,
+          colorTable: readBack.get('colour table') ?? before.colorTable,
+        },
+      }
     })
   }
 
@@ -211,6 +222,18 @@ export class Keyboard {
     return this.query(Cmd.GetColorTable, 0, COLOR_TABLE_LENGTH)
   }
 
+  private async readBoardUnlocked(): Promise<BoardState> {
+    const settings = await this.readSettingsUnlocked()
+    let colorTable: Uint8Array | null = null
+    try {
+      colorTable = await this.readColorTableUnlocked()
+    } catch (err) {
+      if (err instanceof BlockedPacketError) throw err
+      this.log.add('info', `Colour table unavailable (${message(err)}); only firmware colours are possible`)
+    }
+    return { settings, colorTable }
+  }
+
   /** SET_FEATURE with the request header, then GET_FEATURE for the reply. */
   private async query(cmd: number, param: number, length: number, request = buildReadRequest(cmd, param, length)) {
     await this.transfer(request)
@@ -232,16 +255,16 @@ export class Keyboard {
   }
 
   /** Writes the plan's regions in order, then reads them back (unless this is a dry run). */
-  private async commit(plan: LightingPlan): Promise<SendResult> {
+  private async commit(plan: LightingPlan): Promise<{ result: SendResult; readBack: Map<Region, Uint8Array> }> {
     let result: SendResult = 'sent'
     for (const w of plan.writes) result = await this.write(WRITE_COMMAND[w.region], w.bytes)
     if (result === 'dry-run') {
       this.log.add('info', `Dry run: ${plan.writes.length} write(s) logged, none sent`)
-      return result
+      return { result, readBack: new Map() }
     }
-    await this.verify(plan)
+    const readBack = await this.verify(plan)
     this.log.add('info', 'Done: written and read back')
-    return result
+    return { result, readBack }
   }
 
   /** One SET_FEATURE through the guard, retried like AULA's driver does. */
@@ -259,7 +282,7 @@ export class Keyboard {
   }
 
   /** Reads the written regions back and checks every byte the plan changed now holds its new value. */
-  private async verify(plan: LightingPlan): Promise<void> {
+  private async verify(plan: LightingPlan): Promise<Map<Region, Uint8Array>> {
     const after = new Map<Region, Uint8Array>()
     for (const w of plan.writes) after.set(w.region, await this.readRegion(w.region))
     const missed = plan.changes.filter((c) => after.get(c.region)![c.offset] !== c.to)
@@ -267,6 +290,7 @@ export class Keyboard {
       const list = missed.map((c) => `${c.region} ${offset(c.offset)} reads ${offset(after.get(c.region)![c.offset])}`)
       throw new Error(`The board did not keep the write: ${list.join(', ')}`)
     }
+    return after
   }
 }
 
