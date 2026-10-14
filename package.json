@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:fake": "vite --open /test/fake-board/",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "oxlint && node scripts/raw-sends.mjs",

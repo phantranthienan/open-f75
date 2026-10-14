@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { violations } from '#scripts/raw-sends.mjs'
 
 const SRC = path.resolve(import.meta.dirname, './src')
+const TEST = path.resolve(import.meta.dirname, './test')
 
 /**
  * Nothing may bypass the allowlist guard. A module that touches WebHID outside
@@ -30,6 +31,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': SRC,
+      // Only the dev-server pages in test/ use it (test/fake-board); the build has none.
+      '@test': TEST,
     },
   },
 })

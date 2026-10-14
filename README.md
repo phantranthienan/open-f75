@@ -38,6 +38,7 @@ You need Node 20.19+ or 22.12+ (what Vite asks for) and desktop Chrome or Edge.
 ```sh
 npm install
 npm run dev        # http://localhost:5173, open it in Chrome or Edge
+npm run dev:fake   # the same app against a fake F75, for UI work without the keyboard
 npm test           # end-to-end tests (Playwright); starts the dev server itself
 npm run build      # typecheck + production build into dist/
 npm run lint       # oxlint + the raw-send rule
@@ -45,6 +46,8 @@ npm run typecheck  # TypeScript only
 ```
 
 WebHID only exists in Chromium browsers, and only on `https` or `localhost`. Safari and Firefox don't have it.
+
+`npm run dev:fake` opens `/test/fake-board/`: the real app, with the fake F75 from the tests in place of `navigator.hid`. It holds the owner's settings and colour table and keeps what you write, until you reload. Nothing on that page can reach a real keyboard, and the production build doesn't include it.
 
 The reference projects are git submodules. You only need them to read the sources the code cites: `git submodule update --init` (OpenRGB is a shallow clone, about 60 MB).
 
@@ -398,6 +401,7 @@ test/
                      the tools, keyboard painting, dry run, a lighting send keeps the painting
   profiles/          kept across reloads and loaded back, export and import, a foreign file
                      refused, a loaded profile sent
+  fake-board/        the npm run dev:fake page (index.html, main.ts) and a test that it works
   backup/            the downloaded JSON, reads only; not offered for another model
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage

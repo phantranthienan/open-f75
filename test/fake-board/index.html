@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1a1b26" />
+    <script>
+      // Same as index.html: the saved theme before the first paint.
+      try {
+        const theme = localStorage.getItem('open-f75:theme')
+        if (theme) document.documentElement.dataset.theme = theme
+      } catch (e) {}
+    </script>
+    <title>open-f75 · fake board</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/test/fake-board/main.ts"></script>
+  </body>
+</html>

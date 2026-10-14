@@ -23,6 +23,8 @@ export interface SentReport {
 export type ReplyFormat = 'short-with-id' | 'short' | 'full' | 'full-with-id'
 
 export interface FakeBoard {
+  /** The product name the browser shows; 'Gaming Keyboard' like the real F75. */
+  name?: string
   /** Null: the board never answers the identity read. */
   identity: number[] | null
   settings: number[]
@@ -89,7 +91,7 @@ export function installFakeHid(board: FakeBoard): void {
     opened = false
     readonly vendorId = 0x258a
     readonly productId = board.productId
-    readonly productName = 'Gaming Keyboard'
+    readonly productName = board.name ?? 'Gaming Keyboard'
     readonly collections = collections
     async open() {
       this.opened = true
