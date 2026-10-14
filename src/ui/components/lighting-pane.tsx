@@ -6,6 +6,7 @@ import { Switch } from '@/ui/components/ui/switch'
 import type { BoardState } from '@/keyboard'
 import { errorMessage } from '@/log'
 import { MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY, type Effect } from '@/protocol/effects'
+import { SettingsOffset } from '@/protocol/settings'
 import {
   describeChoice,
   describeWrites,
@@ -52,11 +53,12 @@ function Range(props: { label: string; value: number; max: number; onChange: (n:
   )
 }
 
-/** "board: Fixed on · 7/9", for the pane's border. */
+/** "board: Fixed on · 7/9", for the pane's border. An unlisted effect shows its 0x0a value. */
 function boardSummary(board: BoardState | null): string {
   if (!board) return 'board not read'
   const live = liveEffect(board.settings)
-  if (!live) return "board: an effect AULA's profile doesn't list"
+  if (!live) return `board: effect ${board.settings[SettingsOffset.effect]}, not in AULA's list`
+  if (!live.supported) return `board: ${live.name}, hidden by AULA`
   const state = readEffectState(board.settings, board.colorTable, live)
   return live.brightness && state ? `board: ${live.name} · ${state.brightness}/${MAX_BRIGHTNESS}` : `board: ${live.name}`
 }

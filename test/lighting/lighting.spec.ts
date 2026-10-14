@@ -99,8 +99,15 @@ test.describe('lighting', () => {
       await expect(page.getByLabel('Effect').getByRole('option', { name })).toHaveCount(0)
     }
     await expect(page.getByLabel('Effect').getByRole('option')).toHaveCount(16) // 15 effects and off
-    await expect(page.getByText('board: Shadow disappear')).toBeVisible()
+    await expect(page.getByText('board: Shadow disappear, hidden by AULA')).toBeVisible()
     await expect(page.getByLabel('Effect')).toHaveValue('1') // the pane edits Fixed on instead
+  })
+
+  test('an effect value AULA does not list shows its number', async ({ page }) => {
+    const unlisted = [...BOARD.settings]
+    unlisted[0x0a] = 19
+    await live(page, { settings: unlisted })
+    await expect(page.getByText("board: effect 19, not in AULA's list")).toBeVisible()
   })
 
   test("a change is paced like AULA's driver, and read back only after the board has had time", async ({ page }) => {
