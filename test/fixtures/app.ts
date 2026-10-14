@@ -21,11 +21,12 @@ export { expect }
 
 export const F87_IDENTITY = [0x03, 0x00, 0x00, 0x00, 0x00, 0x8f]
 
-/** The owner's F75 as backed up: Fixed on, white (colour 6), brightness 7. */
+/** The owner's F75 as backed up: Fixed on, white (colour 6), brightness 7. No per-key colours stored. */
 export const BOARD: FakeBoard = {
   identity: F75_IDENTITY,
   settings: F75_SETTINGS,
   colorTable: F75_COLOR_TABLE,
+  perKey: new Array(378).fill(0),
   productId: 0x010c,
   granted: false,
   replyFormat: 'short-with-id', // what Chrome on macOS did with the real F75
@@ -50,10 +51,10 @@ export async function connectF75(page: Page) {
   await expect(page.getByRole('button', { name: 'Read board' })).toBeEnabled()
 }
 
-/** The commands connectF75 sends: identity, then settings page and colour table. */
-export const CONNECT_COMMANDS = [0x82, 0x84, 0x8a]
-/** The reads every lighting change starts with. */
-export const READ_LIGHTING = [0x84, 0x8a]
+/** The reads that load the board's lighting: settings page, colour table, per-key colours. */
+export const READ_LIGHTING = [0x84, 0x8a, 0x86]
+/** The commands connectF75 sends: identity, then the lighting reads. */
+export const CONNECT_COMMANDS = [0x82, ...READ_LIGHTING]
 
 export async function selectEffect(page: Page, name: string) {
   await page.getByLabel('Effect').selectOption({ label: name })

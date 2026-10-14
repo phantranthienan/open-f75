@@ -42,7 +42,8 @@ test.describe('connecting over WebHID', () => {
     await expect(page.getByText(/^This board identifies as AULA F87, not an F75/)).toBeVisible()
     expect(await sent(page)).toHaveLength(1)
     await expect(page.getByRole('button', { name: 'Back up config' })).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Dry run' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dry run', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dry run key colours' })).toBeDisabled()
   })
 
   test('sends nothing at all to a board with another product ID', async ({ page }) => {

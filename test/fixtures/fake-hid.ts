@@ -3,7 +3,7 @@
  * WebHID transport and can check every byte that crosses the HID boundary.
  *
  * It answers the wired protocol (0x06 feature reports): identity, settings
- * page and colour table reads, and keeps what is written. The collections are
+ * page, colour table and per-key colour reads, and keeps what is written. The collections are
  * what Chrome on macOS showed for the owner's real F75 (Device card JSON):
  * one interface, with the keyboard and system-control collections hidden by
  * the browser, and a mouse whose pointer child carries input report 0x07.
@@ -27,6 +27,8 @@ export interface FakeBoard {
   identity: number[] | null
   settings: number[]
   colorTable: number[]
+  /** 378 bytes: red, green and blue planes by LED index. */
+  perKey: number[]
   productId: number
   /** Granted in an earlier visit, so navigator.hid.getDevices() returns it. The app must not use that. */
   granted: boolean
@@ -37,7 +39,7 @@ export interface FakeBoard {
 
 export interface FakeHidHandle {
   sent: SentReport[]
-  state(): { settings: number[]; colorTable: number[] }
+  state(): { settings: number[]; colorTable: number[]; perKey: number[] }
   /** Changes the board's settings page, as its own Fn keys would. */
   setSettings(settings: number[]): void
   unplug(): void
@@ -78,6 +80,7 @@ export function installFakeHid(board: FakeBoard): void {
   const sent: SentReport[] = []
   let settings = [...board.settings]
   let colorTable = [...board.colorTable]
+  let perKey = [...board.perKey]
   let reply: number[] | null = null
   const bytesOf = (data: BufferSource) =>
     Array.from(ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data))
@@ -118,11 +121,17 @@ export function installFakeHid(board: FakeBoard): void {
         case 0x8a:
           stage(colorTable.slice(0, length))
           break
+        case 0x86:
+          if (bytes[1] === 0x00) stage(perKey)
+          break
         case 0x04:
           if (!board.ignoreWrites) settings = payload
           break
         case 0x0a:
           if (!board.ignoreWrites) colorTable = payload
+          break
+        case 0x06:
+          if (!board.ignoreWrites && bytes[1] === 0x00) perKey = payload
           break
       }
     }
@@ -145,7 +154,7 @@ export function installFakeHid(board: FakeBoard): void {
 
   window.__fakeHid = {
     sent,
-    state: () => ({ settings: [...settings], colorTable: [...colorTable] }),
+    state: () => ({ settings: [...settings], colorTable: [...colorTable], perKey: [...perKey] }),
     setSettings: (next) => {
       settings = [...next]
     },

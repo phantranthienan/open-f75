@@ -7,10 +7,11 @@ What it does today:
 - connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
 - reads the board's lighting, so the controls start from what the board shows
 - sets any of the 18 built-in effects (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
-- backs up the board's settings page and colour table as JSON
+- paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect
+- backs up the board's settings page, colour table and per-key colours as JSON
 - shows every frame as hex in a packet log. Dry run is on whenever the page loads.
 
-Per-key colour and the desktop app are not built yet. No F75 effect has a direction setting.
+The desktop app is not built yet. No F75 effect has a direction setting.
 
 ## Contents
 
@@ -52,10 +53,10 @@ The reference projects are git submodules. You only need them to read the source
 2. Open the app and press **Connect**, then pick the board in Chrome's prompt. The app never connects on its own, so you do this after every page load. It opens every interface the browser grants. If the checks then say feature report `0x06` is missing, connect again and pick the board's other entry.
 3. The **device** pane runs the checks: vendor ID, wired product ID, and feature report `0x06` with 519 bytes on a vendor collection. If all three pass, the app sends exactly one command, the identity read, and expects `03 00 00 00 00 cd` (AULA F75). Other models share the USB IDs, so nothing else is sent until this check passes.
 4. **Copy JSON** on the device pane and keep it. It is the record of what your board exposes.
-5. **Back up config** downloads the identity, the 128-byte settings page and the 512-byte colour table. Do this before the first write.
+5. **Back up config** downloads the identity, the 128-byte settings page, the 512-byte colour table and the 378 bytes of per-key colours. Do this before the first write.
 6. The **lighting** pane already shows what the board shows: right after the identity check the app reads the settings page and the colour table (reads only). Pick a colour on the wheel (or type one) and press **Dry run**. The app reads the board again, then logs the bytes it would change and the frames it would write, without sending them.
 7. Turn dry run off in the top bar and send green (`#00ff00`). On a board like the owner's it changes one settings byte, the best-proven path. Then unplug and replug to check that it stays.
-8. Only then try a custom colour, which also writes the colour table (see [the two paths](#setting-a-colour-the-two-paths)), and replug again. Then other effects, brightness and speed. Change one thing at a time.
+8. Only then try a custom colour, which also writes the colour table (see [the two paths](#setting-a-colour-the-two-paths)), and replug again. Then other effects, brightness and speed, and last the per-key painter: its commands come from AULA's decompiled driver and haven't been tried on a board yet. Change one thing at a time.
 
 ## How it fits together
 
@@ -171,8 +172,12 @@ AULA's driver waits 20 ms before every transfer and tries a failed one 3 times, 
 | `0x04` | `0` | 128 | settings page write | yes |
 | `0x8a` | `0` | 512 | colour table read | yes |
 | `0x0a` | `0` | 512 | colour table write | yes |
+| `0x86` | `0` | 378 | per-key colours read (group 0) | yes |
+| `0x06` | `0` | 378 | per-key colours write (group 0) | yes |
 
-These five are the whole allowlist. The other commands in AULA's driver are refused on purpose: `0x03`/`0x83` key matrix, `0x05`/`0x85` macros, `0x06`/`0x86` per-key colours, `0x08` direct LEDs, `0x0b`/`0x0c`/`0x0d` screen, `0x0e`/`0x0f`, `0x11` factory reset, `0x87` battery and `0x88`. The [report](docs/reverse-engineering/report.md#6-every-command) has each one byte by byte.
+These seven are the whole allowlist. The per-key pair comes from AULA's decompiled driver, which logs them as "GetGame"/"SetGame": three planes of 126 bytes (red, green, blue), each indexed by the key's LED index. The driver sends the colours while it selects the per-key effect (`0x0a = 21`, `0x09 = 1`), before the settings page, and the app does the same. That the `0x86` read returns the same layout is assumed; the read-back check will say so if it doesn't.
+
+The other commands in AULA's driver are refused on purpose: `0x03`/`0x83` key matrix, `0x05`/`0x85` macros, `0x08` direct LEDs, `0x0b`/`0x0c`/`0x0d` screen, `0x0e`/`0x0f`, `0x11` factory reset, `0x87` battery and `0x88`. The [report](docs/reverse-engineering/report.md#6-every-command) has each one byte by byte.
 
 ### Model identities
 
@@ -230,7 +235,7 @@ Either way the effect byte becomes Fixed on and the per-key flag at `0x09` is cl
 
 The only real risk to a keyboard is firmware. Everything here is meant to make the worst realistic outcome a factory reset.
 
-- **Five commands only.** `src/allowlist.ts` lists them, and every header field must match exactly: command, parameter, one package, index 0, length. The padding must be zero, and a write must carry its region's `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, update and boot commands, the dongle's `0x13` reports and anything unknown are refused.
+- **Seven commands only.** `src/allowlist.ts` lists them, and every header field must match exactly: command, parameter, one package, index 0, length. The padding must be zero, and a settings or colour-table write must carry its region's `5A A5` marker. Factory reset, key matrix, macros, direct LEDs, firmware, update and boot commands, the dongle's `0x13` reports and anything unknown are refused.
 - **The rule is enforced three times:**
   1. **The guard.** App code sends only through `src/safe-send.ts`, which checks the allowlist, applies dry run and logs the hex. A refused frame shows as a `BLOCK` line in the log.
   2. **The transport.** `src/transports/webhid.ts` checks the allowlist again right before the hardware call, so code that skips the guard still can't send anything else. It also only routes a report to an interface that declares it.
@@ -289,10 +294,12 @@ src/
     effects.ts             the 20 effects: 0x0a value, settings slot, which controls each takes
     settings.ts            the settings page: offsets, the end marker, reading and writing a slot
     color-table.ts         the colour table: rows of 7 colours, the layout check
-    lighting.ts            planLighting: the read-modify-write plan for an effect and its controls
+    lighting.ts            planLighting and planPerKey: the read-modify-write plans
+    per-key.ts             the per-key colours: three 126-byte planes by LED index
+    keys.ts                the F75's keys as AULA's driver draws them, with their LED indices
     ids.ts                 USB IDs and the 6-byte model identities
     bytes.ts               hex and RGB helpers
-  allowlist.ts             the five commands that may reach the board; inspect() and assertAllowed()
+  allowlist.ts             the seven commands that may reach the board; inspect() and assertAllowed()
   safe-send.ts             the guard: allowlist, dry run, hex log. The only caller of Transport.send
   device-check.ts          the checks that gate every send (shown in the device pane)
   keyboard.ts              identify, read the board, apply lighting, backup, read back; retries and delays
@@ -305,6 +312,7 @@ src/
     hooks/
       use-session.ts       wires transport, guard, keyboard and log for the UI
       use-lighting.ts      the lighting being edited, loaded from each read of the board
+      use-key-colors.ts    the per-key colours being painted, loaded from the board
       use-saved-colors.ts  saved colours in localStorage
       use-theme.ts         the theme, in localStorage, applied to <html data-theme>
     components/
@@ -313,6 +321,8 @@ src/
       lighting-pane.tsx    effect, brightness, speed, colourful, the colour picker, Dry run / Send to keyboard
       color-picker.tsx     wheel, swatch, hex field and saved colours
       color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
+      keys-pane.tsx        the per-key painter: tools, Dry run / Send key colours
+      key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints
       backup-pane.tsx      Back up config, downloads the JSON
       log-pane.tsx         the packet log: follows new lines, copy, clear
       status-line.tsx      DRY RUN / LIVE, the board, frame counts
@@ -345,6 +355,7 @@ One screen, laid out like a terminal dashboard:
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
 - **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). Then the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. Below that the wheel, a swatch, the hex field and its RGB value, your saved colours, a line saying what Send will write, and **Dry run** or **Send to keyboard**. That button is amber while dry run is on. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
 - **backup:** **Back up config**. It only reads.
+- **keys:** the per-key painter. **Paint** or **Erase**, **Fill all**, **Clear all** and **Board's colours** (back to what the board stores), the colour it paints with (the one picked in the lighting pane), and **Dry run key colours** or **Send key colours**, which also selects the per-key effect. The map is AULA's drawing of the F75 (the ISO layout, the only one AULA ships for it): click a key, press and drag across keys, or focus a key and press Enter. Each key's name and colour is its accessible name.
 - **packet log:** every frame and status line with a time stamp. `TX` sent, `RX` received, `DRY` held back by dry run, `BLOCK` refused by the allowlist, `ERR` and `INFO`. Frames longer than 48 bytes fold to a preview; click to see all of them. The log follows new lines while you're at the bottom and stays put when you scroll up. Use the icons for **Copy log** and **Clear log**.
 - **Status line:** `DRY RUN` or `LIVE`, the board's model, idle or working, and counts of tx, rx, dry and blocked frames.
 
@@ -377,6 +388,8 @@ test/
                      per-key effect, no-op, a board that ignores writes, a colour table with another layout
   lighting/          starting from the board, another effect with its own values, a custom colour
                      in the effect's own row, effects without a colour, off, Read board
+  per-key/           click and drag painting and the exact bytes sent, starting from the board,
+                     the tools, keyboard painting, dry run, a lighting send keeps the painting
   backup/            the downloaded JSON, reads only; not offered for another model
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage
@@ -386,6 +399,7 @@ test/
 The fake board can be set up per test (`openWithBoard(page, { ... })`):
 
 - `identity`: another model's bytes, or `null` for no answer
+- `settings`, `colorTable`, `perKey`: what the board stores (the owner's real settings and colour table by default, no per-key colours). `window.__fakeHid.setSettings(bytes)` changes the settings later, as the board's own `Fn` keys would
 - `productId`: e.g. a wireless or bootloader ID
 - `replyFormat`: how GET_FEATURE replies arrive. `short-with-id` is the default, what Chrome on macOS did; the others are `short`, `full` and `full-with-id`.
 - `ignoreWrites`: accepts writes but keeps the old bytes

@@ -4,14 +4,20 @@
  * transport right before the hardware call, so code that skips the guard
  * still cannot send anything else.
  *
- * Five wired commands pass: three reads (identity, settings page, colour
- * table) and two writes (settings page, colour table). Every header field must
- * match exactly, the zero padding must be zero, and a write must carry its
- * region's 5A A5 end marker. Factory reset, key matrix, macros, direct LEDs,
- * firmware and anything unknown are refused.
+ * Seven wired commands pass: four reads (identity, settings page, colour
+ * table, per-key colours) and three writes (settings page, colour table,
+ * per-key colours). Every header field must match exactly, the zero padding
+ * must be zero, and a settings or colour-table write must carry its region's
+ * 5A A5 end marker. Factory reset, key matrix, macros, direct LEDs, firmware
+ * and anything unknown are refused.
+ *
+ * Each rule's bytes are sourced in protocol/: the per-key commands come from
+ * AULA's decompiled driver (protocol/per-key.ts, report §10), only for colour
+ * group 0, the one group the F75 profile has.
  */
 import { toHex } from '@/protocol/bytes'
 import { COLOR_TABLE_LENGTH, hasColorTableMarker } from '@/protocol/color-table'
+import { PER_KEY_LENGTH } from '@/protocol/per-key'
 import { SETTINGS_LENGTH, isSettingsPage } from '@/protocol/settings'
 import {
   Cmd,
@@ -51,6 +57,7 @@ const RULES: readonly Rule[] = [
   { name: 'identity read', cmd: Cmd.GetInfo, param: INFO_IDENTITY, length: IDENTITY_LENGTH, access: 'read' },
   { name: 'settings read', cmd: Cmd.GetSettings, param: 0, length: SETTINGS_LENGTH, access: 'read' },
   { name: 'colour table read', cmd: Cmd.GetColorTable, param: 0, length: COLOR_TABLE_LENGTH, access: 'read' },
+  { name: 'per-key colours read', cmd: Cmd.GetPerKey, param: 0, length: PER_KEY_LENGTH, access: 'read' },
   {
     name: 'settings write',
     cmd: Cmd.SetSettings,
@@ -67,6 +74,8 @@ const RULES: readonly Rule[] = [
     access: 'write',
     payload: (d) => (hasColorTableMarker(d) ? null : 'colour table without its 5A A5 marker'),
   },
+  // Any 378 bytes are colours; the padding check keeps the rest of the frame zero.
+  { name: 'per-key colours write', cmd: Cmd.SetPerKey, param: 0, length: PER_KEY_LENGTH, access: 'write' },
 ]
 
 const hex8 = (n: number) => `0x${n.toString(16).padStart(2, '0')}`

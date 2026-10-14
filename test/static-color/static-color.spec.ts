@@ -30,7 +30,7 @@ test.describe('static colour over WebHID', () => {
     await expect(page.getByText(/^Dry run \(firmware colour/)).toBeVisible()
     await expect(page.getByRole('log')).toContainText('settings 0x3b: 0x46 -> 0x41')
     expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
-    expect(await boardState(page)).toEqual({ settings: BOARD.settings, colorTable: BOARD.colorTable })
+    expect(await boardState(page)).toEqual({ settings: BOARD.settings, colorTable: BOARD.colorTable, perKey: BOARD.perKey })
   })
 
   test('a firmware colour changes one settings byte and is read back', async ({ page }) => {

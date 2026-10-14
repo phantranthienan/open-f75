@@ -54,12 +54,16 @@ export const Cmd = {
   SetSettings: 0x04,
   GetColorTable: 0x8a,
   SetColorTable: 0x0a,
+  GetPerKey: 0x86,
+  SetPerKey: 0x06,
 } as const
 
 /**
+ * 0x06/0x86 carry the per-key colours; the parameter is the colour group, and
+ * the driver's log calls them "SetGame"/"GetGame" [DRV].
+ *
  * Known but deliberately unused, so the guard refuses them [DRV]: 0x03/0x83
- * key matrix (parameter = layer), 0x05/0x85 macros, 0x06/0x86 per-key colours
- * (parameter = group; the driver's log calls it "SetGame"), 0x08 direct LEDs,
+ * key matrix (parameter = layer), 0x05/0x85 macros, 0x08 direct LEDs,
  * 0x0b/0x0c/0x0d screen, 0x0e/0x0f, 0x11 factory reset, 0x87 battery,
  * 0x88 "GetRealData".
  *

@@ -1,28 +1,35 @@
 import { BackupPane } from '@/ui/components/backup-pane'
 import { DevicePane } from '@/ui/components/device-pane'
+import { KeysPane } from '@/ui/components/keys-pane'
 import { LightingPane } from '@/ui/components/lighting-pane'
 import { LogPane } from '@/ui/components/log-pane'
 import { StatusLine } from '@/ui/components/status-line'
 import { TopBar } from '@/ui/components/top-bar'
+import { useKeyColors } from '@/ui/hooks/use-key-colors'
 import { useLighting } from '@/ui/hooks/use-lighting'
 import { useSession } from '@/ui/hooks/use-session'
 
 /**
- * One screen, like a terminal dashboard: device, lighting and backup on the
- * left, the packet log on the right, a status line at the bottom. From 1024 px
- * it fits the window and each pane scrolls on its own; narrower, the panes stack.
+ * One screen, like a terminal dashboard: device and backup on the left, the
+ * lighting in the middle, the packet log on the right, the key painter along
+ * the bottom and a status line under it. From 1024 px it fits the window and
+ * each pane scrolls on its own; narrower, the panes stack.
  */
 export default function App() {
   const session = useSession()
   const lighting = useLighting(session.board)
+  const keys = useKeyColors(session.board)
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <TopBar session={session} />
-      <main className="grid flex-1 gap-x-3 gap-y-6 px-3 pt-6 pb-3 md:grid-cols-2 lg:min-h-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.35fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
-        <DevicePane session={session} className="lg:row-span-2" />
+      <main className="grid flex-1 gap-x-3 gap-y-6 px-3 pt-6 pb-3 md:grid-cols-2 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
+        <div className="flex min-h-0 flex-col gap-6">
+          <DevicePane session={session} className="flex-1" />
+          <BackupPane session={session} />
+        </div>
         <LightingPane session={session} lighting={lighting} />
-        <BackupPane session={session} className="lg:col-start-2" />
+        <KeysPane session={session} keys={keys} paintColor={lighting.color} className="md:col-span-2 lg:row-start-2" />
         <LogPane session={session} className="h-96 md:col-span-2 lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:h-auto" />
       </main>
       <StatusLine session={session} />

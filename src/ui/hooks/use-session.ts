@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Assessment, IdentityState } from '@/device-check'
-import { Keyboard, type ApplyResult, type Backup, type BoardState } from '@/keyboard'
+import { Keyboard, type Applied, type Backup, type BoardState } from '@/keyboard'
 import { createLog } from '@/log'
-import type { LightingChoice, LightingPlan } from '@/protocol/lighting'
+import type { LightingChoice } from '@/protocol/lighting'
+import type { KeyColors } from '@/protocol/per-key'
 import { createSafeSend } from '@/safe-send'
 import { formatId, type DeviceInfo } from '@/transport'
 import { WebHidTransport, isWebHidSupported } from '@/transports/webhid'
@@ -125,15 +126,18 @@ export function useSession() {
     [run],
   )
 
-  const applyLighting = useCallback(
-    (choice: LightingChoice): Promise<Outcome<{ result: ApplyResult; plan: LightingPlan }>> =>
-      run('Lighting', async (kb) => {
-        const { board: after, ...outcome } = await kb.applyLighting(choice)
+  /** Runs a write and keeps the board state it read back. */
+  const apply = useCallback(
+    (label: string, task: (kb: Keyboard) => Promise<Applied>): Promise<Outcome<Omit<Applied, 'board'>>> =>
+      run(label, async (kb) => {
+        const { board: after, ...applied } = await task(kb)
         setBoard(after)
-        return outcome
+        return applied
       }),
     [run],
   )
+  const applyLighting = useCallback((choice: LightingChoice) => apply('Lighting', (kb) => kb.applyLighting(choice)), [apply])
+  const applyPerKey = useCallback((colors: KeyColors) => apply('Per-key colours', (kb) => kb.applyPerKey(colors)), [apply])
 
   const backup = useCallback((): Promise<Outcome<Backup>> => run('Backup', (kb) => kb.backup()), [run])
 
@@ -154,6 +158,7 @@ export function useSession() {
     disconnect,
     readBoard,
     applyLighting,
+    applyPerKey,
     backup,
   }
 }

@@ -30,7 +30,7 @@ export function BackupPane({ session, className }: { session: Session; className
   return (
     <Pane title="backup" meta="reads only" className={className} bodyClassName="flex flex-col items-start gap-3 text-xs">
       <p className="text-muted-foreground">
-        Read before you write: saves the identity, the 128-byte settings page and the 512-byte colour table as JSON.
+        Read before you write: saves the identity, the 128-byte settings page, the 512-byte colour table and the 378 bytes of per-key colours as JSON.
       </p>
       <Button variant="secondary" size="sm" disabled={!canRun} onClick={() => void onBackup()}>
         <Download />

@@ -3,15 +3,16 @@
  *
  * Every transfer goes through SafeSend. Nothing beyond the identity read is
  * sent until the board identifies as an F75. Changes are read-modify-write:
- * read the region, patch the bytes that need changing, write it back, then
- * read it again and check the bytes stuck.
+ * read the regions, plan the bytes that change (protocol/lighting.ts), write
+ * them back, then read them again and check the bytes stuck.
  */
 import { assessDevice, type Assessment, type IdentityState } from '@/device-check'
 import type { Log } from '@/log'
 import { formatHexColor, toHex } from '@/protocol/bytes'
 import { COLOR_NAMES, COLOR_TABLE_LENGTH } from '@/protocol/color-table'
 import { modelName } from '@/protocol/ids'
-import { planLighting, type LightingChoice, type LightingPlan, type Region } from '@/protocol/lighting'
+import { planLighting, planPerKey, type LightingChoice, type LightingPlan, type Region } from '@/protocol/lighting'
+import { PER_KEY_LENGTH, type KeyColors } from '@/protocol/per-key'
 import { SETTINGS_LENGTH, assertSettingsPage } from '@/protocol/settings'
 import {
   Cmd,
@@ -29,25 +30,35 @@ import { BlockedPacketError, featurePacket } from '@/allowlist'
 import type { SafeSend, SendResult } from '@/safe-send'
 import { formatId, type DeviceInfo, type Transport } from '@/transport'
 
+/** The regions the lighting lives in, as the board last returned them. */
+export interface BoardState {
+  settings: Uint8Array
+  /** Null when the colour table could not be read; only firmware colours are possible then. */
+  colorTable: Uint8Array | null
+  /** Null when the per-key colours could not be read. */
+  perKey: Uint8Array | null
+}
+
 export interface Backup {
   format: 'open-f75-backup'
-  version: 2
+  version: 3
   createdAt: string
   device: DeviceInfo
   /** Hex, or null when that read failed (see `errors`). */
   identity: string | null
   settings: string | null
   colorTable: string | null
-  errors: Partial<Record<'settings' | 'colorTable', string>>
+  perKey: string | null
+  errors: Partial<Record<'settings' | 'colorTable' | 'perKey', string>>
 }
 
 export type ApplyResult = SendResult | 'unchanged'
 
-/** The regions the lighting lives in, as the board last returned them. */
-export interface BoardState {
-  settings: Uint8Array
-  /** Null when the colour table could not be read; only firmware colours are possible then. */
-  colorTable: Uint8Array | null
+export interface Applied {
+  result: ApplyResult
+  plan: LightingPlan
+  /** The board as read back, or as read before a dry run or a no-op. */
+  board: BoardState
 }
 
 export interface KeyboardOptions {
@@ -68,9 +79,14 @@ export class BusyError extends Error {
   }
 }
 
+/** Where each region lives on the board. */
+const REGIONS: Record<Region, { read: number; write: number; length: number }> = {
+  settings: { read: Cmd.GetSettings, write: Cmd.SetSettings, length: SETTINGS_LENGTH },
+  'colour table': { read: Cmd.GetColorTable, write: Cmd.SetColorTable, length: COLOR_TABLE_LENGTH },
+  'per-key colours': { read: Cmd.GetPerKey, write: Cmd.SetPerKey, length: PER_KEY_LENGTH },
+}
+
 const RETRY_DELAY_MS = 70
-/** The write command for each region a plan can change. */
-const WRITE_COMMAND: Record<Region, number> = { settings: Cmd.SetSettings, 'colour table': Cmd.SetColorTable }
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 const offset = (n: number) => `0x${n.toString(16).padStart(2, '0')}`
@@ -127,70 +143,55 @@ export class Keyboard {
     })
   }
 
-  /** The settings page and the colour table, for the UI to show what the board shows. Reads only. */
+  /** Everything the lighting lives in, for the UI to show what the board shows. Reads only. */
   readBoard(): Promise<BoardState> {
     return this.exclusive(() => this.readBoardUnlocked())
   }
 
-  /**
-   * An effect with its brightness, speed and colour, saved on the board. See
-   * planLighting. Returns the board as read back, or as read before a dry run.
-   */
-  applyLighting(choice: LightingChoice): Promise<{ result: ApplyResult; plan: LightingPlan; board: BoardState }> {
+  /** An effect with its brightness, speed and colour, saved on the board. See planLighting. */
+  applyLighting(choice: LightingChoice): Promise<Applied> {
     return this.exclusive(async () => {
-      this.log.add('info', `${describeChoice(choice)}: reading settings and colour table`)
+      this.log.add('info', `${describeChoice(choice)}: reading the board`)
       const before = await this.readBoardUnlocked()
-      const plan = planLighting(before.settings, before.colorTable, choice)
-      plan.warnings.forEach((w) => this.log.add('error', w))
-      if (plan.changes.length === 0) {
-        this.log.add('info', 'The board already shows this; nothing to write')
-        return { result: 'unchanged', plan, board: before }
-      }
-      this.log.add('info', `Plan: ${describePlan(plan)}`)
-      for (const c of plan.changes) {
-        this.log.add('info', `  ${c.region} ${offset(c.offset)}: ${offset(c.from)} -> ${offset(c.to)}`)
-      }
-      const { result, readBack } = await this.commit(plan)
-      return {
-        result,
-        plan,
-        board: {
-          settings: readBack.get('settings') ?? before.settings,
-          colorTable: readBack.get('colour table') ?? before.colorTable,
-        },
-      }
+      return this.apply(before, planLighting(before.settings, before.colorTable, choice))
     })
   }
 
-  /** Identity, settings page and colour table as JSON-ready hex. Reads only. */
+  /** The per-key effect in these colours, saved on the board. See planPerKey. */
+  applyPerKey(colors: KeyColors): Promise<Applied> {
+    return this.exclusive(async () => {
+      this.log.add('info', `Per-key colours, ${colors.size} key(s) lit: reading the board`)
+      const before = await this.readBoardUnlocked()
+      return this.apply(before, planPerKey(before.settings, before.perKey, colors))
+    })
+  }
+
+  /** Identity and every region as JSON-ready hex. Reads only; a failed read is noted, not fatal. */
   backup(): Promise<Backup> {
     return this.exclusive(async () => {
       this.requireF75()
-      const backup: Backup = {
+      const errors: Backup['errors'] = {}
+      const hexOf = async (region: Region, key: keyof Backup['errors']) => {
+        try {
+          return toHex(await this.readRegion(region), '')
+        } catch (err) {
+          if (err instanceof BlockedPacketError) throw err
+          errors[key] = message(err)
+          this.log.add('error', `${region} read failed: ${message(err)}`)
+          return null
+        }
+      }
+      return {
         format: 'open-f75-backup',
-        version: 2,
+        version: 3,
         createdAt: new Date().toISOString(),
         device: this.device,
         identity: this.identityState.status === 'read' ? toHex(this.identityState.bytes, '') : null,
-        settings: null,
-        colorTable: null,
-        errors: {},
+        settings: await hexOf('settings', 'settings'),
+        colorTable: await hexOf('colour table', 'colorTable'),
+        perKey: await hexOf('per-key colours', 'perKey'),
+        errors,
       }
-      try {
-        backup.settings = toHex(await this.readSettingsUnlocked(), '')
-      } catch (err) {
-        if (err instanceof BlockedPacketError) throw err
-        backup.errors.settings = message(err)
-        this.log.add('error', `Settings read failed: ${message(err)}`)
-      }
-      try {
-        backup.colorTable = toHex(await this.readColorTableUnlocked(), '')
-      } catch (err) {
-        if (err instanceof BlockedPacketError) throw err
-        backup.errors.colorTable = message(err)
-        this.log.add('error', `Colour table read failed: ${message(err)}`)
-      }
-      return backup
     })
   }
 
@@ -210,28 +211,63 @@ export class Keyboard {
     }
   }
 
-  private async readSettingsUnlocked(): Promise<Uint8Array> {
+  private async readRegion(region: Region): Promise<Uint8Array> {
     this.requireF75()
-    const page = await this.query(Cmd.GetSettings, 0, SETTINGS_LENGTH)
-    assertSettingsPage(page)
-    return page
+    const { read, length } = REGIONS[region]
+    const bytes = await this.query(read, 0, length)
+    // A failed settings read looks like a page without its end marker [ASL].
+    if (region === 'settings') assertSettingsPage(bytes)
+    return bytes
   }
 
-  private async readColorTableUnlocked(): Promise<Uint8Array> {
-    this.requireF75()
-    return this.query(Cmd.GetColorTable, 0, COLOR_TABLE_LENGTH)
+  /** For a region the app can work without: logs a failed read and returns null. */
+  private async readOptional(region: Region, consequence: string): Promise<Uint8Array | null> {
+    try {
+      return await this.readRegion(region)
+    } catch (err) {
+      if (err instanceof BlockedPacketError) throw err
+      this.log.add('info', `${region} unavailable (${message(err)}); ${consequence}`)
+      return null
+    }
   }
 
   private async readBoardUnlocked(): Promise<BoardState> {
-    const settings = await this.readSettingsUnlocked()
-    let colorTable: Uint8Array | null = null
-    try {
-      colorTable = await this.readColorTableUnlocked()
-    } catch (err) {
-      if (err instanceof BlockedPacketError) throw err
-      this.log.add('info', `Colour table unavailable (${message(err)}); only firmware colours are possible`)
+    return {
+      settings: await this.readRegion('settings'),
+      colorTable: await this.readOptional('colour table', 'only firmware colours are possible'),
+      perKey: await this.readOptional('per-key colours', 'the key painter starts blank'),
     }
-    return { settings, colorTable }
+  }
+
+  /** Logs the plan, writes it (unless nothing changes) and returns the board as read back. */
+  private async apply(before: BoardState, plan: LightingPlan): Promise<Applied> {
+    plan.warnings.forEach((w) => this.log.add('error', w))
+    if (plan.changes.length === 0) {
+      this.log.add('info', 'The board already shows this; nothing to write')
+      return { result: 'unchanged', plan, board: before }
+    }
+    this.log.add('info', `Plan: ${describePlan(plan)}`)
+    for (const c of plan.changes) {
+      this.log.add('info', `  ${c.region} ${offset(c.offset)}: ${offset(c.from)} -> ${offset(c.to)}`)
+    }
+
+    let result: SendResult = 'sent'
+    for (const w of plan.writes) result = await this.write(REGIONS[w.region].write, w.bytes)
+    if (result === 'dry-run') {
+      this.log.add('info', `Dry run: ${plan.writes.length} write(s) logged, none sent`)
+      return { result, plan, board: before }
+    }
+    const after = await this.verify(plan)
+    this.log.add('info', 'Done: written and read back')
+    return {
+      result,
+      plan,
+      board: {
+        settings: after.get('settings') ?? before.settings,
+        colorTable: after.get('colour table') ?? before.colorTable,
+        perKey: after.get('per-key colours') ?? before.perKey,
+      },
+    }
   }
 
   /** SET_FEATURE with the request header, then GET_FEATURE for the reply. */
@@ -248,23 +284,6 @@ export class Keyboard {
   private write(cmd: number, data: Uint8Array): Promise<SendResult> {
     this.requireF75()
     return this.transfer(buildWrite(cmd, 0, data))
-  }
-
-  private readRegion(region: Region): Promise<Uint8Array> {
-    return region === 'settings' ? this.readSettingsUnlocked() : this.readColorTableUnlocked()
-  }
-
-  /** Writes the plan's regions in order, then reads them back (unless this is a dry run). */
-  private async commit(plan: LightingPlan): Promise<{ result: SendResult; readBack: Map<Region, Uint8Array> }> {
-    let result: SendResult = 'sent'
-    for (const w of plan.writes) result = await this.write(WRITE_COMMAND[w.region], w.bytes)
-    if (result === 'dry-run') {
-      this.log.add('info', `Dry run: ${plan.writes.length} write(s) logged, none sent`)
-      return { result, readBack: new Map() }
-    }
-    const readBack = await this.verify(plan)
-    this.log.add('info', 'Done: written and read back')
-    return { result, readBack }
   }
 
   /** One SET_FEATURE through the guard, retried like AULA's driver does. */
@@ -288,7 +307,11 @@ export class Keyboard {
     const missed = plan.changes.filter((c) => after.get(c.region)![c.offset] !== c.to)
     if (missed.length) {
       const list = missed.map((c) => `${c.region} ${offset(c.offset)} reads ${offset(after.get(c.region)![c.offset])}`)
-      throw new Error(`The board did not keep the write: ${list.join(', ')}`)
+      const perKey = missed.some((c) => c.region === 'per-key colours')
+      throw new Error(
+        `The board did not keep the write: ${list.join(', ')}` +
+          (perKey ? ". The per-key read-back layout isn't confirmed yet; check what the keys show." : ''),
+      )
     }
     return after
   }

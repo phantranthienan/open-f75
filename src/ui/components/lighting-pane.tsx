@@ -123,9 +123,19 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="effect" className="text-xs">
-          Effect
-        </Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="effect" className="text-xs">
+            Effect
+          </Label>
+          {effect.colorful && (
+            <span className="flex items-center gap-2">
+              <Label htmlFor="colorful" className="text-xs">
+                Colourful
+              </Label>
+              <Switch id="colorful" checked={lighting.colorful} onCheckedChange={lighting.setColorful} />
+            </span>
+          )}
+        </div>
         <select
           id="effect"
           value={effect.value}
@@ -140,29 +150,22 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
         </select>
       </div>
 
-      <Range
-        label="Brightness"
-        value={lighting.brightness}
-        max={MAX_BRIGHTNESS}
-        onChange={lighting.setBrightness}
-        disabledReason={effect.brightness ? null : 'none for this effect'}
-      />
-      <Range
-        label="Speed"
-        value={lighting.speed}
-        max={MAX_SPEED}
-        onChange={lighting.setSpeed}
-        disabledReason={effect.speed ? null : 'none for this effect'}
-      />
-
-      {effect.colorful && (
-        <div className="flex items-center gap-2">
-          <Switch id="colorful" checked={lighting.colorful} onCheckedChange={lighting.setColorful} />
-          <Label htmlFor="colorful" className="text-xs">
-            Colourful
-          </Label>
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-x-4">
+        <Range
+          label="Brightness"
+          value={lighting.brightness}
+          max={MAX_BRIGHTNESS}
+          onChange={lighting.setBrightness}
+          disabledReason={effect.brightness ? null : 'none here'}
+        />
+        <Range
+          label="Speed"
+          value={lighting.speed}
+          max={MAX_SPEED}
+          onChange={lighting.setSpeed}
+          disabledReason={effect.speed ? null : 'none here'}
+        />
+      </div>
 
       <ColorPicker value={lighting.color} onChange={lighting.setColor} />
 

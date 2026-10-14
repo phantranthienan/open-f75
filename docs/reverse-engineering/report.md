@@ -451,6 +451,7 @@ Every feature below needs new allowlist rules. Each rule must name its exact com
 
 ### All effects
 
+- **Status (2026-10-14)**: built, the lighting pane (`src/protocol/effects.ts`, `planLighting`).
 - **Write**: `0x0a` = the effect's value (`EFFECTS` in `src/protocol/effects.ts`), `0x09 = (value == 21)`, keep the rest of the page. Same `0x04` write as today, so no new command.
 - **Confirmed**: values, slots, which controls each effect takes (§9).
 - **Unknown**:
@@ -459,17 +460,20 @@ Every feature below needs new allowlist rules. Each rule must name its exact com
 
 ### Brightness and speed
 
+- **Status (2026-10-14)**: built, in the lighting pane.
 - **Write**: slot byte 0 = brightness 0–9, slot byte 1 high nibble = speed 0–4, for the effect's slot. `0x04` only.
 - **Confirmed**: field positions and ranges (§7, §9).
 - **Unknown**: whether speed matters for Fixed on (the profile hides it).
 
 ### Colour per effect
 
+- **Status (2026-10-14)**: built, in the lighting pane.
 - **Write**: row = effect value, slot 0 = colour, nibble 0; or nibble 7 for colourful. `0x0a` and `0x04`, both already allowed.
 - **Confirmed**: §8.
 
 ### Per-key painter
 
+- **Status (2026-10-14)**: built, the keys pane (`src/protocol/per-key.ts`, `planPerKey`), with allowlist rules for `0x06`/`0x86`, parameter 0, 378 bytes. Not yet tried on a board.
 - **Write**:
   - settings: `0x0a = 21`, `0x09 = 1`, `0x0b = 0x20`
   - then `0x06`, parameter 0, 378 bytes, planar R/G/B by LED index (§10)

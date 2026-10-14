@@ -1,15 +1,16 @@
 /**
  * Planning a lighting change as read-modify-write over the regions the board
  * just returned. Pure functions only: the plan lists the regions to write, in
- * the order AULA's driver writes them (colour table, then settings page [DRV]),
- * and every byte that changes.
+ * the order AULA's driver writes them (per-key colours, colour table, then
+ * settings page [DRV]), and every byte that changes.
  */
 import { assertRgb, sameBytes, type Rgb } from '@/protocol/bytes'
 import { COLOR_NAMES, FIRMWARE_COLORS, colorRow, rowMatchesLayout, withSlotZero } from '@/protocol/color-table'
-import { MAX_BRIGHTNESS, MAX_SPEED, PER_KEY, type Effect } from '@/protocol/effects'
+import { MAX_BRIGHTNESS, MAX_SPEED, PER_KEY, effectByValue, type Effect } from '@/protocol/effects'
+import { PER_KEY_LENGTH, encodePerKey, type KeyColors } from '@/protocol/per-key'
 import { COLORFUL, PER_KEY_GROUP_0, SettingsOffset, assertSettingsPage, readSlot, writeSlot } from '@/protocol/settings'
 
-export type Region = 'settings' | 'colour table'
+export type Region = 'settings' | 'colour table' | 'per-key colours'
 
 export interface Change {
   region: Region
@@ -140,6 +141,21 @@ export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null
   changes.push(...diff('settings', settings, next))
 
   return { writes, changes, warnings, colorPath: pick?.path ?? null, colorIndex: pick?.nibble ?? null }
+}
+
+/**
+ * Plan for the per-key effect in these colours: the colours (0x06, group 0),
+ * then the settings page with the per-key effect selected. `before` is the
+ * board's per-key colours, or null when they could not be read.
+ */
+export function planPerKey(settings: Uint8Array, before: Uint8Array | null, colors: KeyColors): LightingPlan {
+  const bytes = encodePerKey(colors)
+  const select = planLighting(settings, null, { effect: effectByValue(PER_KEY), color: 'own' })
+  return {
+    ...select,
+    writes: [{ region: 'per-key colours', bytes }, ...select.writes],
+    changes: [...diff('per-key colours', before ?? new Uint8Array(PER_KEY_LENGTH), bytes), ...select.changes],
+  }
 }
 
 /** What the board holds for one effect, as the controls show it. */
