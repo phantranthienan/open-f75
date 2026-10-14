@@ -4,14 +4,11 @@ import { Button } from '@/ui/components/ui/button'
 import type { Backup } from '@/keyboard'
 import { Pane } from '@/ui/components/pane'
 import type { Session } from '@/ui/hooks/use-session'
+import { downloadText, fileStamp } from '@/ui/lib/download'
 
 function download(backup: Backup): string {
-  const stamp = backup.createdAt.replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
-  const name = `open-f75-backup-${stamp}.json`
-  const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }))
-  const a = Object.assign(document.createElement('a'), { href: url, download: name })
-  a.click()
-  URL.revokeObjectURL(url)
+  const name = `open-f75-backup-${fileStamp(backup.createdAt)}.json`
+  downloadText(name, JSON.stringify(backup, null, 2))
   return name
 }
 

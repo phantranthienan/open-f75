@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { BoardState } from '@/keyboard'
+import type { Profile } from '@/profiles'
 import { formatHexColor, parseHexColor } from '@/protocol/bytes'
 import { FIXED_ON, MAX_BRIGHTNESS, effectByValue, findEffect, type Effect } from '@/protocol/effects'
 import { readEffectState, type LightingChoice } from '@/protocol/lighting'
@@ -51,6 +52,14 @@ export function useLighting(board: BoardState | null) {
   return {
     effect,
     selectEffect: (value: number) => load(effectByValue(value), board, false),
+    /** Fills the controls from a saved profile. */
+    loadProfile: (p: Pick<Profile, 'effect' | 'brightness' | 'speed' | 'colorful' | 'color'>) => {
+      setEffect(effectByValue(p.effect))
+      setBrightness(p.brightness)
+      setSpeed(p.speed)
+      setColorful(p.colorful)
+      setColor(p.color)
+    },
     brightness,
     setBrightness,
     speed,

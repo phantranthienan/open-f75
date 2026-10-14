@@ -8,6 +8,7 @@ What it does today:
 - reads the board's lighting, so the controls start from what the board shows
 - sets any of the 18 built-in effects (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
 - paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect
+- saves what the lighting and keys panes hold as named profiles in the browser, with JSON export and import
 - backs up the board's settings page, colour table and per-key colours as JSON
 - shows every frame as hex in a packet log. Dry run is on whenever the page loads.
 
@@ -304,6 +305,7 @@ src/
   device-check.ts          the checks that gate every send (shown in the device pane)
   keyboard.ts              identify, read the board, apply lighting, backup, read back; retries and delays
   log.ts                   the packet log store (framework-free)
+  profiles.ts              lighting profiles: the format, its checks, export and import (framework-free)
   transport.ts             the Transport interface and device description types
   transports/
     webhid.ts              WebHID for Chrome/Edge. The only file that touches navigator.hid
@@ -313,6 +315,7 @@ src/
       use-session.ts       wires transport, guard, keyboard and log for the UI
       use-lighting.ts      the lighting being edited, loaded from each read of the board
       use-key-colors.ts    the per-key colours being painted, loaded from the board
+      use-profiles.ts      named profiles in localStorage
       use-saved-colors.ts  saved colours in localStorage
       use-theme.ts         the theme, in localStorage, applied to <html data-theme>
     components/
@@ -324,6 +327,7 @@ src/
       keys-pane.tsx        the per-key painter: tools, Dry run / Send key colours
       key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints
       backup-pane.tsx      Back up config, downloads the JSON
+      profiles-pane.tsx    save, load, delete, export and import profiles
       log-pane.tsx         the packet log: follows new lines, copy, clear
       status-line.tsx      DRY RUN / LIVE, the board, frame counts
       pane.tsx             the bordered box with its title in the border
@@ -331,6 +335,7 @@ src/
     lib/
       color.ts             HSV <-> RGB for the wheel
       utils.ts             cn(), the class-name helper shadcn uses
+      download.ts          offers a file download (backup, profiles)
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
 scripts/rea-bridge.py      keeps one REA/Ghidra session open for static analysis of AULA's binaries
@@ -355,11 +360,12 @@ One screen, laid out like a terminal dashboard:
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
 - **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). Then the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. Below that the wheel, a swatch, the hex field and its RGB value, your saved colours, a line saying what Send will write, and **Dry run** or **Send to keyboard**. That button is amber while dry run is on. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
 - **backup:** **Back up config**. It only reads.
+- **profiles:** above the log. Type a name and **Save profile** to keep the effect, its brightness, speed and colourful setting, the colour and the key colours in this browser. Click a profile to load it into the controls (nothing is sent until you press Send), or × to delete it. **Export profiles** downloads them all as JSON; **Import profiles** adds the ones in such a file, replacing any with the same name. Imported and stored profiles are checked field by field, so a damaged file can't reach the controls.
 - **keys:** the per-key painter. **Paint** or **Erase**, **Fill all**, **Clear all** and **Board's colours** (back to what the board stores), the colour it paints with (the one picked in the lighting pane), and **Dry run key colours** or **Send key colours**, which also selects the per-key effect. The map is AULA's drawing of the F75 (the ISO layout, the only one AULA ships for it): click a key, press and drag across keys, or focus a key and press Enter. Each key's name and colour is its accessible name.
 - **packet log:** every frame and status line with a time stamp. `TX` sent, `RX` received, `DRY` held back by dry run, `BLOCK` refused by the allowlist, `ERR` and `INFO`. Frames longer than 48 bytes fold to a preview; click to see all of them. The log follows new lines while you're at the bottom and stays put when you scroll up. Use the icons for **Copy log** and **Clear log**.
 - **Status line:** `DRY RUN` or `LIVE`, the board's model, idle or working, and counts of tx, rx, dry and blocked frames.
 
-From 1024 px wide everything fits the window and each pane scrolls on its own. Narrower, the panes stack.
+From 1024 px wide everything fits the window, and each pane scrolls on its own: device and backup on the left, lighting in the middle, profiles and the packet log on the right, and the keys along the bottom. Narrower, the panes stack.
 
 **The colour wheel** sets hue around the ring (red at the top, clockwise) and saturation from the centre (white) to the edge. Value is always full: the board has its own brightness, and dark colours only make the LEDs look off. Type a hex value for anything else. From the keyboard, focus the wheel: ←/→ change the hue by 5°, ↑/↓ change saturation by 5%, Shift triples the step, and Home goes to white.
 
@@ -390,6 +396,8 @@ test/
                      in the effect's own row, effects without a colour, off, Read board
   per-key/           click and drag painting and the exact bytes sent, starting from the board,
                      the tools, keyboard painting, dry run, a lighting send keeps the painting
+  profiles/          kept across reloads and loaded back, export and import, a foreign file
+                     refused, a loaded profile sent
   backup/            the downloaded JSON, reads only; not offered for another model
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage

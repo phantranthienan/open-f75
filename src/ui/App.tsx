@@ -3,6 +3,7 @@ import { DevicePane } from '@/ui/components/device-pane'
 import { KeysPane } from '@/ui/components/keys-pane'
 import { LightingPane } from '@/ui/components/lighting-pane'
 import { LogPane } from '@/ui/components/log-pane'
+import { ProfilesPane } from '@/ui/components/profiles-pane'
 import { StatusLine } from '@/ui/components/status-line'
 import { TopBar } from '@/ui/components/top-bar'
 import { useKeyColors } from '@/ui/hooks/use-key-colors'
@@ -11,8 +12,8 @@ import { useSession } from '@/ui/hooks/use-session'
 
 /**
  * One screen, like a terminal dashboard: device and backup on the left, the
- * lighting in the middle, the packet log on the right, the key painter along
- * the bottom and a status line under it. From 1024 px it fits the window and
+ * lighting in the middle, profiles and the packet log on the right, the key
+ * painter along the bottom and a status line under it. From 1024 px it fits the window and
  * each pane scrolls on its own; narrower, the panes stack.
  */
 export default function App() {
@@ -30,7 +31,10 @@ export default function App() {
         </div>
         <LightingPane session={session} lighting={lighting} />
         <KeysPane session={session} keys={keys} paintColor={lighting.color} className="md:col-span-2 lg:row-start-2" />
-        <LogPane session={session} className="h-96 md:col-span-2 lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:h-auto" />
+        <div className="flex min-h-0 flex-col gap-6 md:col-span-2 lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1">
+          <ProfilesPane lighting={lighting} keys={keys} />
+          <LogPane session={session} className="h-96 lg:h-auto lg:flex-1" />
+        </div>
       </main>
       <StatusLine session={session} />
     </div>
