@@ -4,7 +4,8 @@ import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
 import { formatHexColor, parseHexColor } from '@/protocol/bytes'
-import { COLOR_NAMES, FIRMWARE_COLORS } from '@/protocol/settings'
+import { COLOR_NAMES, FIRMWARE_COLORS } from '@/protocol/color-table'
+import { FIXED_ON, effectByValue } from '@/protocol/effects'
 import { ColorWheel } from '@/ui/components/color-wheel'
 import { Pane } from '@/ui/components/pane'
 import { useSavedColors } from '@/ui/hooks/use-saved-colors'
@@ -29,10 +30,10 @@ export function ColorPane({ session, className }: { session: Session; className?
   }
 
   async function onSend() {
-    const outcome = await session.setStaticColor(parseHexColor(color))
+    const outcome = await session.applyLighting({ effect: effectByValue(FIXED_ON), color: parseHexColor(color) })
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
     const { result, plan } = outcome.value
-    const what = plan.custom ? 'custom colour, colour table + settings page' : `firmware colour, settings page only`
+    const what = plan.colorPath === 'custom' ? 'custom colour, colour table + settings page' : `firmware colour, settings page only`
     setStatus(
       result === 'unchanged'
         ? `The board already shows ${color} on Fixed on. Nothing was written.`

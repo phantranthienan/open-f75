@@ -11,7 +11,8 @@
  * firmware and anything unknown are refused.
  */
 import { toHex } from '@/protocol/bytes'
-import { COLOR_TABLE_LENGTH, SETTINGS_LENGTH, hasColorTableMarker, isSettingsPage } from '@/protocol/settings'
+import { COLOR_TABLE_LENGTH, hasColorTableMarker } from '@/protocol/color-table'
+import { SETTINGS_LENGTH, isSettingsPage } from '@/protocol/settings'
 import {
   Cmd,
   DATA_LENGTH,

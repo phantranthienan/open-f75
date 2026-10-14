@@ -57,7 +57,7 @@ test.describe('static colour over WebHID', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved #123456 (custom colour')).toBeVisible()
-    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a, COLOR_TABLE_WRITE, SETTINGS_WRITE, 0x84, 0x8a])
+    expect(await commands(page)).toEqual([0x82, 0x84, 0x8a, COLOR_TABLE_WRITE, SETTINGS_WRITE, 0x8a, 0x84])
 
     const tableWrite = (await sent(page)).find((r) => r.data[0] === COLOR_TABLE_WRITE)!
     const table = payloadOf(tableWrite.data, 512)

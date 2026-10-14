@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Assessment, IdentityState } from '@/device-check'
-import { Keyboard, type Backup, type ColorResult } from '@/keyboard'
+import { Keyboard, type ApplyResult, type Backup } from '@/keyboard'
 import { createLog } from '@/log'
-import type { Rgb } from '@/protocol/bytes'
-import type { StaticColorPlan } from '@/protocol/settings'
+import type { LightingChoice, LightingPlan } from '@/protocol/lighting'
 import { createSafeSend } from '@/safe-send'
 import { formatId, type DeviceInfo } from '@/transport'
 import { WebHidTransport, isWebHidSupported } from '@/transports/webhid'
@@ -103,9 +102,9 @@ export function useSession() {
     log.add('info', 'Disconnected')
   }, [transport, setKeyboard])
 
-  const setStaticColor = useCallback(
-    (rgb: Rgb): Promise<Outcome<{ result: ColorResult; plan: StaticColorPlan }>> =>
-      run('Static colour', (kb) => kb.setStaticColor(rgb)),
+  const applyLighting = useCallback(
+    (choice: LightingChoice): Promise<Outcome<{ result: ApplyResult; plan: LightingPlan }>> =>
+      run('Lighting', (kb) => kb.applyLighting(choice)),
     [run],
   )
 
@@ -125,7 +124,7 @@ export function useSession() {
     clearLog: log.clear,
     connect,
     disconnect,
-    setStaticColor,
+    applyLighting,
     backup,
   }
 }

@@ -8,16 +8,11 @@
  */
 import { assessDevice, type Assessment, type IdentityState } from '@/device-check'
 import type { Log } from '@/log'
-import { formatHexColor, toHex, type Rgb } from '@/protocol/bytes'
+import { formatHexColor, toHex } from '@/protocol/bytes'
+import { COLOR_NAMES, COLOR_TABLE_LENGTH } from '@/protocol/color-table'
 import { modelName } from '@/protocol/ids'
-import {
-  COLOR_NAMES,
-  COLOR_TABLE_LENGTH,
-  SETTINGS_LENGTH,
-  assertSettingsPage,
-  planStaticColor,
-  type StaticColorPlan,
-} from '@/protocol/settings'
+import { planLighting, type LightingChoice, type LightingPlan, type Region } from '@/protocol/lighting'
+import { SETTINGS_LENGTH, assertSettingsPage } from '@/protocol/settings'
 import {
   Cmd,
   HEADER_LENGTH,
@@ -46,7 +41,7 @@ export interface Backup {
   errors: Partial<Record<'settings' | 'colorTable', string>>
 }
 
-export type ColorResult = SendResult | 'unchanged'
+export type ApplyResult = SendResult | 'unchanged'
 
 export interface KeyboardOptions {
   transport: Transport
@@ -67,6 +62,8 @@ export class BusyError extends Error {
 }
 
 const RETRY_DELAY_MS = 70
+/** The write command for each region a plan can change. */
+const WRITE_COMMAND: Record<Region, number> = { settings: Cmd.SetSettings, 'colour table': Cmd.SetColorTable }
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 const offset = (n: number) => `0x${n.toString(16).padStart(2, '0')}`
@@ -127,10 +124,10 @@ export class Keyboard {
     return this.exclusive(() => this.readSettingsUnlocked())
   }
 
-  /** "Fixed on" in one colour, saved on the board. See planStaticColor for the two paths. */
-  setStaticColor(rgb: Rgb): Promise<{ result: ColorResult; plan: StaticColorPlan }> {
+  /** An effect with its brightness, speed and colour, saved on the board. See planLighting. */
+  applyLighting(choice: LightingChoice): Promise<{ result: ApplyResult; plan: LightingPlan }> {
     return this.exclusive(async () => {
-      this.log.add('info', `Static colour ${formatHexColor(rgb)}: reading settings and colour table`)
+      this.log.add('info', `${describeChoice(choice)}: reading settings and colour table`)
       const settings = await this.readSettingsUnlocked()
       let table: Uint8Array | null = null
       try {
@@ -140,34 +137,17 @@ export class Keyboard {
         this.log.add('info', `Colour table unavailable (${message(err)}); only firmware colours are possible`)
       }
 
-      const plan = planStaticColor(settings, table, rgb)
+      const plan = planLighting(settings, table, choice)
       plan.warnings.forEach((w) => this.log.add('error', w))
       if (plan.changes.length === 0) {
-        this.log.add('info', `The board already shows ${formatHexColor(rgb)} on Fixed on; nothing to write`)
+        this.log.add('info', 'The board already shows this; nothing to write')
         return { result: 'unchanged', plan }
       }
-
-      this.log.add(
-        'info',
-        plan.custom
-          ? "Plan: custom colour into colour table row 1, slot 0, then select slot 0 (as AULA's driver does)"
-          : `Plan: select firmware colour ${plan.colorIndex} (${COLOR_NAMES[plan.colorIndex]}); settings page only`,
-      )
+      this.log.add('info', `Plan: ${describePlan(plan)}`)
       for (const c of plan.changes) {
         this.log.add('info', `  ${c.region} ${offset(c.offset)}: ${offset(c.from)} -> ${offset(c.to)}`)
       }
-
-      let result: SendResult = 'sent'
-      if (plan.colorTable) result = await this.write(Cmd.SetColorTable, plan.colorTable)
-      result = await this.write(Cmd.SetSettings, plan.settings)
-      if (result === 'dry-run') {
-        this.log.add('info', `Dry run: ${plan.colorTable ? 2 : 1} write(s) logged, none sent`)
-        return { result, plan }
-      }
-
-      await this.verify(plan)
-      this.log.add('info', 'Done: written and read back')
-      return { result, plan }
+      return { result: await this.commit(plan), plan }
     })
   }
 
@@ -247,6 +227,23 @@ export class Keyboard {
     return this.transfer(buildWrite(cmd, 0, data))
   }
 
+  private readRegion(region: Region): Promise<Uint8Array> {
+    return region === 'settings' ? this.readSettingsUnlocked() : this.readColorTableUnlocked()
+  }
+
+  /** Writes the plan's regions in order, then reads them back (unless this is a dry run). */
+  private async commit(plan: LightingPlan): Promise<SendResult> {
+    let result: SendResult = 'sent'
+    for (const w of plan.writes) result = await this.write(WRITE_COMMAND[w.region], w.bytes)
+    if (result === 'dry-run') {
+      this.log.add('info', `Dry run: ${plan.writes.length} write(s) logged, none sent`)
+      return result
+    }
+    await this.verify(plan)
+    this.log.add('info', 'Done: written and read back')
+    return result
+  }
+
   /** One SET_FEATURE through the guard, retried like AULA's driver does. */
   private async transfer(frame: Uint8Array): Promise<SendResult> {
     for (let attempt = 1; ; attempt++) {
@@ -261,16 +258,31 @@ export class Keyboard {
     }
   }
 
-  /** Reads the regions back and checks every byte the plan changed now holds its new value. */
-  private async verify(plan: StaticColorPlan): Promise<void> {
-    const after = {
-      settings: await this.readSettingsUnlocked(),
-      'colour table': plan.colorTable ? await this.readColorTableUnlocked() : null,
-    }
-    const missed = plan.changes.filter((c) => after[c.region] !== null && after[c.region]![c.offset] !== c.to)
+  /** Reads the written regions back and checks every byte the plan changed now holds its new value. */
+  private async verify(plan: LightingPlan): Promise<void> {
+    const after = new Map<Region, Uint8Array>()
+    for (const w of plan.writes) after.set(w.region, await this.readRegion(w.region))
+    const missed = plan.changes.filter((c) => after.get(c.region)![c.offset] !== c.to)
     if (missed.length) {
-      const list = missed.map((c) => `${c.region} ${offset(c.offset)} reads ${offset(after[c.region]![c.offset])}`)
+      const list = missed.map((c) => `${c.region} ${offset(c.offset)} reads ${offset(after.get(c.region)![c.offset])}`)
       throw new Error(`The board did not keep the write: ${list.join(', ')}`)
     }
+  }
+}
+
+function describeChoice({ effect, color }: LightingChoice): string {
+  if (!effect.color && !effect.colorful) return effect.name
+  return `${effect.name}, ${typeof color === 'string' ? color : formatHexColor(color)}`
+}
+
+function describePlan(plan: LightingPlan): string {
+  const regions = plan.writes.map((w) => w.region).join(' + ')
+  switch (plan.colorPath) {
+    case 'custom':
+      return `custom colour into slot 0 of the effect's colour-table row, then select slot 0 (as AULA's driver does); ${regions}`
+    case 'firmware':
+      return `select colour slot ${plan.colorIndex} (${COLOR_NAMES[plan.colorIndex!]} by default); ${regions} only`
+    default:
+      return `${regions} only`
   }
 }

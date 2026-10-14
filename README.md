@@ -62,12 +62,12 @@ The code has layers. Each one only talks to the one below it.
 
 ```
  src/ui/                    React: the panes, buttons and log you see
-   │   session.setStaticColor(rgb), session.backup(), session.connect()
+   │   session.applyLighting(choice), session.backup(), session.connect()
    ▼
  src/ui/hooks/use-session.ts
    │   builds the stack below on Connect, owns dry run, holds the packet log
    ▼
- src/keyboard.ts            Keyboard: identify, backup, set static colour, read back
+ src/keyboard.ts            Keyboard: identify, backup, apply lighting, read back
    │   asks src/protocol/ to build frames and to plan changes (pure functions)
    ▼
  src/safe-send.ts           the guard: allowlist check, dry run, hex log
@@ -110,7 +110,7 @@ TX    settings read                    06 84 00 00 01 00 80 00
 RX    reply to 0x84 (136 bytes)        06 84 00 00 01 00 80 00 + 128 bytes of settings
 TX    colour table read                06 8a 00 00 01 00 00 02
 RX    reply to 0x8a (520 bytes)        06 8a 00 00 01 00 00 02 + 512 bytes of colour table
-INFO  Plan: custom colour into colour table row 1, slot 0 (unconfirmed path), then select slot 0
+INFO  Plan: custom colour into slot 0 of the effect's colour-table row, then select slot 0 (as AULA's driver does); colour table + settings
 INFO    colour table 0x16: 0xff -> 0x66
 INFO    colour table 0x17: 0xff -> 0x00
 INFO    settings 0x3b: 0x46 -> 0x40
@@ -123,16 +123,16 @@ With dry run off, the two `DRY` lines become `TX`. The app then reads both regio
 
 The code path behind that one click:
 
-1. `ColorPane.onSend` (`src/ui/components/color-pane.tsx`) calls `session.setStaticColor(rgb)`.
+1. `ColorPane.onSend` (`src/ui/components/color-pane.tsx`) calls `session.applyLighting({ effect, color })`.
 2. `useSession` (`src/ui/hooks/use-session.ts`) runs it on the `Keyboard`, marks the app busy and turns any error into a message.
-3. `Keyboard.setStaticColor` (`src/keyboard.ts`) reads the settings page and the colour table, then calls `planStaticColor`.
-4. `planStaticColor` (`src/protocol/settings.ts`) returns the patched regions and the list of changed bytes. It does no I/O.
+3. `Keyboard.applyLighting` (`src/keyboard.ts`) reads the settings page and the colour table, then calls `planLighting`.
+4. `planLighting` (`src/protocol/lighting.ts`) returns the regions to write, in order, and the list of changed bytes. It does no I/O.
 5. Each write goes through `SafeSend` (`src/safe-send.ts`), then `WebHidTransport.send` (`src/transports/webhid.ts`), then `HIDDevice.sendFeatureReport`.
-6. `Keyboard.verify` reads both regions back and compares.
+6. `Keyboard.verify` reads the written regions back and compares.
 
 ## The protocol
 
-Everything here is cited byte by byte in the comments of `src/protocol/wired.ts` and `src/protocol/settings.ts`. See [Sources](#sources-and-references) for what the tags like `[ASL]` mean.
+Everything here is cited byte by byte in the comments of `src/protocol/` (`wired.ts`, `settings.ts`, `color-table.ts`, `effects.ts`). See [Sources](#sources-and-references) for what the tags like `[ASL]` mean.
 
 ### The frame
 
@@ -198,7 +198,7 @@ More precisely, each effect has a row, at row = its `0x0a` value. AULA's driver 
 
 ### Setting a colour: the two paths
 
-`planStaticColor` in `src/protocol/settings.ts` decides:
+`planLighting` in `src/protocol/lighting.ts` decides, for Fixed on as for any effect with a colour:
 
 1. **The colour is already in the Fixed-on row.** Only the colour nibble changes, one byte in the settings page, plus the effect byte if the board isn't on Fixed on. AulaSofwareLinux confirmed this on an F75: pressing `Fn+Tab` moved exactly that byte.
 2. **Otherwise**, if the board's own colour table has the expected layout, the colour goes into row 1, slot 0, and the nibble selects slot 0. That is exactly what AULA's driver does for a custom colour, and what the OEM app did on the F87. The app still checks the board's table first. On the owner's board slot 0 holds white, so red takes this path too.
@@ -229,12 +229,12 @@ The only real risk to a keyboard is firmware. Everything here is meant to make t
 Read in this order. Each step builds on the one before. The line counts are rough.
 
 1. **`src/protocol/wired.ts`** (~140 lines): the frame. Start with the comment at the top, which has the byte layout and its sources. Then read `buildReadRequest`, `buildWrite` and `parseReply`, whose comment explains why short replies are accepted.
-2. **`src/protocol/settings.ts`** (~230): what the board stores. The top comment maps both regions. Then read `planStaticColor` at the bottom: the whole colour decision in one pure function. `describeBoard` decodes what the board currently shows; the UI doesn't use it yet.
+2. **`src/protocol/effects.ts`**, **`settings.ts`**, **`color-table.ts`** (~70 each): what the board stores. `effects.ts` lists the 20 effects and their controls; the top comments of the other two map the settings page and the colour table. Then **`lighting.ts`** (~150): `planLighting`, the whole lighting decision in one pure function.
 3. **`src/protocol/ids.ts`** (~45): why the USB IDs aren't enough, and the identity bytes of each model.
 4. **`src/allowlist.ts`** (~125): `RULES` and `inspect()`, exactly what may be sent and why a frame is refused.
 5. **`src/safe-send.ts`** (~45): the guard. It's short; read all of it.
 6. **`src/device-check.ts`** (~100): the four checks, `canIdentify` versus `canSend`, and the "blocked" messages the device pane shows.
-7. **`src/keyboard.ts`** (~275): the operations. Read `identify()`, `setStaticColor()` and `backup()`, then the private helpers `query`, `transfer` and `verify` at the bottom.
+7. **`src/keyboard.ts`** (~290): the operations. Read `identify()`, `applyLighting()` and `backup()`, then the private helpers `query`, `transfer`, `commit` and `verify` at the bottom.
 8. **`src/transport.ts`** (~75), then **`src/transports/webhid.ts`** (~155): the hardware edge. It opens every interface of the board, sends each report to the interface that declares it, and makes the second allowlist check.
 9. **`src/ui/hooks/use-session.ts`** (~135): how the UI wires all of the above together. It covers Connect, the dry-run ref the guard reads, and the log store.
 10. **`src/ui/App.tsx`** and **`src/ui/components/`**: the screen. Start from `App.tsx` for the grid, then the pane you care about.
@@ -247,8 +247,8 @@ Read in this order. Each step builds on the one before. The line counts are roug
 | Why is this byte this value? | the source tags in the comments of `src/protocol/*.ts`; [Sources](#sources-and-references) |
 | What exactly can the app send? | `src/allowlist.ts` |
 | Why did the app refuse to send? | the device pane and `src/device-check.ts`; `BLOCK` lines in the log and `inspect()` in `src/allowlist.ts` |
-| How does a colour become bytes? | `planStaticColor` in `src/protocol/settings.ts` |
-| What happens when I click Send? | `color-pane.tsx` → `use-session.ts` → `Keyboard.setStaticColor` ([walkthrough](#one-colour-change-frame-by-frame)) |
+| How does a colour become bytes? | `planLighting` in `src/protocol/lighting.ts` |
+| What happens when I click Send? | `color-pane.tsx` → `use-session.ts` → `Keyboard.applyLighting` ([walkthrough](#one-colour-change-frame-by-frame)) |
 | How does dry run work? | `src/safe-send.ts`, and `dryRunRef` in `src/ui/hooks/use-session.ts` |
 | How does the build stop raw sends? | `scripts/raw-sends.mjs`, used by `vite.config.ts` and `npm run lint` |
 | What is in the backup file? | `Backup` and `backup()` in `src/keyboard.ts`; `src/ui/components/backup-pane.tsx` |
@@ -266,7 +266,10 @@ src/
   index.css                Tailwind, the three themes (CSS variables), base styles
   protocol/                pure functions, no I/O
     wired.ts               0x06 framing: build requests and writes, parse replies
-    settings.ts            settings page and colour table: offsets, checks, planStaticColor
+    effects.ts             the 20 effects: 0x0a value, settings slot, which controls each takes
+    settings.ts            the settings page: offsets, the end marker, reading and writing a slot
+    color-table.ts         the colour table: rows of 7 colours, the layout check
+    lighting.ts            planLighting: the read-modify-write plan for an effect and its controls
     ids.ts                 USB IDs and the 6-byte model identities
     bytes.ts               hex and RGB helpers
   allowlist.ts             the five commands that may reach the board; inspect() and assertAllowed()

@@ -438,8 +438,8 @@ The driver can't brick an F75 by itself. A firmware update needs AULA to ship an
 | identity request `06 82 01 00 01 00 06 00`, F75 = `03 00 00 00 00 cd` | §4 | matches |
 | device checks: usage page `0xFF00`, feature report `0x06` | §4 | matches |
 | `settings.ts` `0x0a`, Fixed on = 1, slot at `0x3a`/`0x3b`, colour nibble, `COLORFUL = 7` | §7 | matches. The comment's "position in the list" is true for 1–18 only; it now says what the byte really is |
-| slot of an effect = `effect − 1` | slots go by list position | fixed: `EFFECT_VALUES` lists the 19 values in slot order, so per-key (21) maps to slot 18 and off (0) to none |
-| setting Fixed on leaves `0x09` alone | the driver writes `0x09 = 0` for every effect but per-key | **fixed**: `planStaticColor` clears `0x09`; new test "leaving the per-key effect clears its flag, as AULA's driver does" (`test/static-color`). It fails without the fix |
+| slot of an effect = `effect − 1` | slots go by list position | fixed: the effect list (now `EFFECTS` in `src/protocol/effects.ts`) has the 19 values in slot order, so per-key (21) maps to slot 18 and off (0) to none |
+| setting Fixed on leaves `0x09` alone | the driver writes `0x09 = 0` for every effect but per-key | **fixed**: the colour plan (now `planLighting`) clears `0x09`; new test "leaving the per-key effect clears its flag, as AULA's driver does" (`test/static-color`). It fails without the fix |
 | colour table: rows of 7, row 1 = Fixed on, custom colour in slot 0, `5A A5` at 506 | §8 | matches; comments no longer call it unconfirmed |
 | allowlist: five commands, everything else refused | §6, §16 | matches; the safety test now also sends the driver's reset frame and the per-key, streaming, screen and battery commands |
 
@@ -451,7 +451,7 @@ Every feature below needs new allowlist rules. Each rule must name its exact com
 
 ### All effects
 
-- **Write**: `0x0a = EFFECT_VALUES[i]`, `0x09 = (value == 21)`, keep the rest of the page. Same `0x04` write as today, so no new command.
+- **Write**: `0x0a` = the effect's value (`EFFECTS` in `src/protocol/effects.ts`), `0x09 = (value == 21)`, keep the rest of the page. Same `0x04` write as today, so no new command.
 - **Confirmed**: values, slots, which controls each effect takes (§9).
 - **Unknown**:
   - how the firmware treats a value outside the list
