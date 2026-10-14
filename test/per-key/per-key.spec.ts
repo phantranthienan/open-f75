@@ -3,34 +3,27 @@ import {
   BOARD,
   CONNECT_COMMANDS,
   READ_LIGHTING,
+  WRITE,
   boardState,
   changedOffsets,
   commands,
   connectF75,
   expect,
+  keyOnMap as key,
   openWithBoard,
   pickColor,
   sendColor,
-  sent,
+  sendKeyColors,
   setDryRun,
   test,
+  writtenPayload,
 } from '@test/fixtures/app'
 
-const PER_KEY_WRITE = 0x06
-const SETTINGS_WRITE = 0x04
 // Planes of 126 bytes: red, green, blue, each by LED index.
 const R = 0
 const G = 126
 const B = 252
 const LED = { Esc: 0, Q: 8, W: 14, E: 20, Space: 35 }
-
-const key = (page: Page, name: string) => page.getByRole('button', { name: new RegExp(`^${name}: `) })
-const sendKeys = (page: Page) => page.getByRole('button', { name: /^(Dry run key colours|Send key colours)$/ }).click()
-
-async function written(page: Page, cmd: number, length: number) {
-  const write = (await sent(page)).find((r) => r.data[0] === cmd)
-  return write ? write.data.slice(7, 7 + length) : null
-}
 
 async function drag(page: Page, from: string, ...through: string[]) {
   const centre = async (name: string) => {
@@ -57,17 +50,17 @@ test.describe('per-key colours', () => {
     await expect(key(page, 'W')).toHaveAccessibleName('W: #ff0000')
     await expect(page.getByText('5 of 81 lit')).toBeVisible()
 
-    await sendKeys(page)
-    await expect(page.getByText('Saved 5 key colour(s) and the per-key effect, and read them back.')).toBeVisible()
+    await sendKeyColors(page)
+    await expect(page.getByText('Saved the per-key effect with 5 key(s) lit (per-key colours + settings page) and read it back.')).toBeVisible()
     // The driver's order: colours, then the settings page; then both read back.
-    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING, PER_KEY_WRITE, SETTINGS_WRITE, 0x86, 0x84])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING, WRITE.perKey, WRITE.settings, 0x86, 0x84])
 
-    const colors = (await written(page, PER_KEY_WRITE, 378))!
+    const colors = (await writtenPayload(page, WRITE.perKey, 378))!
     for (const led of [LED.Esc, LED.Q, LED.W, LED.E]) expect([colors[R + led], colors[G + led], colors[B + led]]).toEqual([255, 0, 0])
     expect([colors[R + LED.Space], colors[G + LED.Space], colors[B + LED.Space]]).toEqual([0, 0, 255])
     expect(colors.filter((b) => b !== 0)).toHaveLength(5)
 
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x09, 0x0a]) // 0x0b is 0x20 already
     expect([settings[0x09], settings[0x0a], settings[0x0b]]).toEqual([1, 21, 0x20])
     expect(await boardState(page)).toMatchObject({ settings, perKey: colors })
@@ -116,7 +109,7 @@ test.describe('per-key colours', () => {
     await openWithBoard(page)
     await connectF75(page)
     await key(page, 'Esc').click()
-    await sendKeys(page)
+    await sendKeyColors(page)
 
     await expect(page.getByText(/^Dry run \(per-key colours \+ settings page\)/)).toBeVisible()
     expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])

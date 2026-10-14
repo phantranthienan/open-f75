@@ -1,18 +1,20 @@
-import { FlaskConical, RefreshCw, Send } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { Label } from '@/ui/components/ui/label'
 import { Switch } from '@/ui/components/ui/switch'
+import type { BoardState } from '@/keyboard'
 import { formatHexColor } from '@/protocol/bytes'
 import { COLOR_NAMES, FIRMWARE_COLORS } from '@/protocol/color-table'
 import { EFFECTS, MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY, findEffect } from '@/protocol/effects'
-import type { LightingChoice, LightingPlan } from '@/protocol/lighting'
-import { readEffectState } from '@/protocol/lighting'
+import { readEffectState, type LightingChoice, type LightingPlan } from '@/protocol/lighting'
 import { SettingsOffset } from '@/protocol/settings'
 import { ColorPicker } from '@/ui/components/color-picker'
 import { Pane } from '@/ui/components/pane'
+import { SendButton } from '@/ui/components/send-button'
 import type { Lighting } from '@/ui/hooks/use-lighting'
 import type { Session } from '@/ui/hooks/use-session'
+import { resultMessage } from '@/ui/lib/result-message'
 import { cn } from '@/ui/lib/utils'
 
 const FIRMWARE_HEX = FIRMWARE_COLORS.map(formatHexColor)
@@ -59,6 +61,16 @@ function whatIsWritten(plan: LightingPlan): string {
   return 'settings page only'
 }
 
+/** "board: Fixed on · 7/9", for the pane's border. */
+function boardSummary(board: BoardState | null): string {
+  if (!board) return 'board not read'
+  const value = board.settings[SettingsOffset.effect]
+  const live = findEffect(value)
+  if (!live) return `board: effect ${value}`
+  const state = readEffectState(board.settings, board.colorTable, live)
+  return live.brightness && state ? `board: ${live.name} · ${state.brightness}/${MAX_BRIGHTNESS}` : `board: ${live.name}`
+}
+
 /** What Send will do with the current choice, before anything is read. */
 function hint(lighting: Lighting): string {
   const { effect, colorful, color } = lighting
@@ -79,33 +91,18 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
   const { board } = session
   const { effect } = lighting
   const ready = session.connected && !session.busy && session.assessment?.canSend === true
-  const live = board ? findEffect(board.settings[SettingsOffset.effect]) : undefined
-  const liveState = board && live ? readEffectState(board.settings, board.colorTable, live) : null
 
   async function onSend() {
     const outcome = await session.applyLighting(lighting.choice)
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
     const { result, plan } = outcome.value
-    const what = describe(lighting.choice)
-    setStatus(
-      result === 'unchanged'
-        ? `The board already shows ${what}. Nothing was written.`
-        : result === 'dry-run'
-          ? `Dry run (${whatIsWritten(plan)}): ${plan.changes.length} byte(s) would change, listed in the log. Turn dry run off to send.`
-          : `Saved ${what} (${whatIsWritten(plan)}) and read it back. Unplug and replug to check that it sticks.`,
-    )
+    setStatus(resultMessage(result, { what: describe(lighting.choice), written: whatIsWritten(plan), changes: plan.changes.length }))
   }
 
   return (
     <Pane
       title="lighting"
-      meta={
-        !board
-          ? 'board not read'
-          : live
-            ? `board: ${live.name}${liveState && live.brightness ? ` · ${liveState.brightness}/${MAX_BRIGHTNESS}` : ''}`
-            : `board: effect ${board.settings[SettingsOffset.effect]}`
-      }
+      meta={boardSummary(board)}
       className={className}
       bodyClassName="flex flex-col gap-4"
       actions={
@@ -172,15 +169,7 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
       <p className="text-xs text-muted-foreground">{board ? hint(lighting) : 'Connect the board: its lighting is read first, then you can change it.'}</p>
 
       <div className="flex flex-col items-start gap-2">
-        <Button
-          disabled={!ready || !board}
-          onClick={() => void onSend()}
-          variant={session.dryRun ? 'outline' : 'default'}
-          className={cn(session.dryRun && 'border-signal-warn text-signal-warn hover:bg-signal-warn/10 hover:text-signal-warn')}
-        >
-          {session.dryRun ? <FlaskConical /> : <Send />}
-          {session.dryRun ? 'Dry run' : 'Send to keyboard'}
-        </Button>
+        <SendButton dryRun={session.dryRun} disabled={!ready || !board} onClick={() => void onSend()} />
         {status && <p className="text-xs leading-relaxed">{status}</p>}
       </div>
     </Pane>

@@ -74,6 +74,28 @@ export function boardState(page: Page) {
   return page.evaluate(() => window.__fakeHid.state())
 }
 
+/** The write commands the app sends: settings page, colour table, per-key colours. */
+export const WRITE = { settings: 0x04, colorTable: 0x0a, perKey: 0x06 } as const
+
+/** A frame's payload: the data after the 7 header bytes (the report ID is not in `data`). */
+export const payloadOf = (data: number[], length: number) => data.slice(7, 7 + length)
+
+/** The payload of the first write with this command, or null when there was none. */
+export async function writtenPayload(page: Page, cmd: number, length: number): Promise<number[] | null> {
+  const write = (await sent(page)).find((r) => r.data[0] === cmd)
+  return write ? payloadOf(write.data, length) : null
+}
+
+/** A key on the keys pane's map, by its name in AULA's profile ('Esc', 'Q', 'Space'...). */
+export function keyOnMap(page: Page, name: string) {
+  return page.getByRole('button', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `) })
+}
+
+/** The keys pane's button, labelled "Dry run key colours" or "Send key colours". */
+export async function sendKeyColors(page: Page) {
+  await page.getByRole('button', { name: /^(Dry run|Send) key colours$/ }).click()
+}
+
 /** Offsets where two byte arrays differ. */
 export function changedOffsets(before: number[], after: number[]): number[] {
   return before.flatMap((b, i) => (after[i] === b ? [] : [i]))

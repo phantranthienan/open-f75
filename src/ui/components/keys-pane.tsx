@@ -1,4 +1,4 @@
-import { Brush, Eraser, FlaskConical, PaintBucket, RotateCcw, Send, Trash2 } from 'lucide-react'
+import { Brush, Eraser, PaintBucket, RotateCcw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { PER_KEY } from '@/protocol/effects'
@@ -6,8 +6,10 @@ import { F75_KEYS } from '@/protocol/keys'
 import { SettingsOffset } from '@/protocol/settings'
 import { KeyMap } from '@/ui/components/key-map'
 import { Pane } from '@/ui/components/pane'
+import { SendButton } from '@/ui/components/send-button'
 import type { KeyColorsDraft } from '@/ui/hooks/use-key-colors'
 import type { Session } from '@/ui/hooks/use-session'
+import { resultMessage } from '@/ui/lib/result-message'
 import { cn } from '@/ui/lib/utils'
 
 type Tool = 'paint' | 'erase'
@@ -34,13 +36,8 @@ export function KeysPane({
     const outcome = await session.applyPerKey(keys.toRgb())
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
     const { result, plan } = outcome.value
-    setStatus(
-      result === 'unchanged'
-        ? 'The board already shows these key colours. Nothing was written.'
-        : result === 'dry-run'
-          ? `Dry run (per-key colours + settings page): ${plan.changes.length} byte(s) would change, listed in the log. Turn dry run off to send.`
-          : `Saved ${lit} key colour(s) and the per-key effect, and read them back.`,
-    )
+    const what = `the per-key effect with ${lit} key(s) lit`
+    setStatus(resultMessage(result, { what, written: 'per-key colours + settings page', changes: plan.changes.length }))
   }
 
   const toolButton = (value: Tool, label: string, Icon: typeof Brush) => (
@@ -91,16 +88,9 @@ export function KeysPane({
           <span aria-hidden="true" className="size-3.5 rounded-sm border" style={{ backgroundColor: paintColor }} />
           {paintColor}
         </p>
-        <Button
-          size="sm"
-          disabled={!ready}
-          onClick={() => void onSend()}
-          variant={session.dryRun ? 'outline' : 'default'}
-          className={cn('self-start', session.dryRun && 'border-signal-warn text-signal-warn hover:bg-signal-warn/10 hover:text-signal-warn')}
-        >
-          {session.dryRun ? <FlaskConical /> : <Send />}
-          {session.dryRun ? 'Dry run key colours' : 'Send key colours'}
-        </Button>
+        <div>
+          <SendButton dryRun={session.dryRun} label="key colours" size="sm" disabled={!ready} onClick={() => void onSend()} />
+        </div>
         {status && <p className="leading-relaxed">{status}</p>}
       </div>
 

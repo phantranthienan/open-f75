@@ -2,12 +2,14 @@ import {
   BOARD,
   CONNECT_COMMANDS,
   READ_LIGHTING,
+  WRITE,
   boardState,
   changedOffsets,
   commands,
   connectF75,
   expect,
   openWithBoard,
+  payloadOf,
   pickColor,
   selectEffect,
   sendColor,
@@ -16,9 +18,8 @@ import {
   test,
 } from '@test/fixtures/app'
 
-const SETTINGS_WRITE = 0x04
-const COLOR_TABLE_WRITE = 0x0a
-const payloadOf = (data: number[], length: number) => data.slice(7, 7 + length)
+const SETTINGS_WRITE = WRITE.settings
+const COLOR_TABLE_WRITE = WRITE.colorTable
 
 test.describe('static colour over WebHID', () => {
   test('a dry run reads for real and writes nothing', async ({ page }) => {

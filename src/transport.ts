@@ -65,12 +65,6 @@ export interface Transport {
   onDisconnect(listener: () => void): () => void
 }
 
-export function declaresReport(info: DeviceInfo, type: ReportType | 'input', reportId: number): boolean {
-  return info.interfaces.some((iface) =>
-    iface.collections.some((c) => c[type].some((r) => r.id === reportId)),
-  )
-}
-
 export function formatId(id: number, digits = 4): string {
   return `0x${id.toString(16).toUpperCase().padStart(digits, '0')}`
 }

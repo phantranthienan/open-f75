@@ -329,6 +329,7 @@ src/
       color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
       keys-pane.tsx        the per-key painter: tools, Dry run / Send key colours
       key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints
+      send-button.tsx      the amber Dry run / Send button both write panes use
       backup-pane.tsx      Back up config, downloads the JSON
       profiles-pane.tsx    save, load, delete, export and import profiles
       log-pane.tsx         the packet log: follows new lines, copy, clear
@@ -339,6 +340,7 @@ src/
       color.ts             HSV <-> RGB for the wheel
       utils.ts             cn(), the class-name helper shadcn uses
       download.ts          offers a file download (backup, profiles)
+      result-message.ts    the status line after a write: no-op, dry run, or saved and read back
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
 scripts/rea-bridge.py      keeps one REA/Ghidra session open for static analysis of AULA's binaries

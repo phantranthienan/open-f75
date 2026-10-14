@@ -3,7 +3,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
-import { findEffect } from '@/protocol/effects'
+import { MAX_BRIGHTNESS, findEffect } from '@/protocol/effects'
 import { MAX_NAME_LENGTH, parseProfilesFile, toProfilesFile, type Profile } from '@/profiles'
 import { Pane } from '@/ui/components/pane'
 import type { KeyColorsDraft } from '@/ui/hooks/use-key-colors'
@@ -14,7 +14,7 @@ import { downloadText, fileStamp } from '@/ui/lib/download'
 function summary(p: Profile): string {
   const effect = findEffect(p.effect)!
   const parts = [effect.name]
-  if (effect.brightness) parts.push(`${p.brightness}/9`)
+  if (effect.brightness) parts.push(`${p.brightness}/${MAX_BRIGHTNESS}`)
   if (effect.color || effect.colorful) parts.push(p.colorful && effect.colorful ? 'colourful' : p.color)
   const keys = Object.keys(p.keys).length
   if (keys) parts.push(`${keys} key${keys === 1 ? '' : 's'}`)

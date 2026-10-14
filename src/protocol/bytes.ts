@@ -18,12 +18,6 @@ export function toHex(bytes: ArrayLike<number>, separator = ' '): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(separator)
 }
 
-export function fromHex(hex: string): Uint8Array {
-  const clean = hex.replace(/[\s:]/g, '')
-  if (!/^(?:[0-9a-f]{2})*$/i.test(clean)) throw new Error(`not a hex string: ${hex}`)
-  return Uint8Array.from(clean.match(/../g) ?? [], (byte) => parseInt(byte, 16))
-}
-
 export function parseHexColor(color: string): Rgb {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color.trim())
   if (!m) throw new Error(`not a #rrggbb colour: ${color}`)

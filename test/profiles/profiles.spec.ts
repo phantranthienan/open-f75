@@ -1,8 +1,20 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import type { Page } from '@playwright/test'
-import { BOARD, changedOffsets, connectF75, expect, openWithBoard, pickColor, selectEffect, sendColor, sent, setDryRun, test } from '@test/fixtures/app'
-
-const key = (page: Page, name: string) => page.getByRole('button', { name: new RegExp(`^${name}: `) })
+import {
+  BOARD,
+  WRITE,
+  changedOffsets,
+  connectF75,
+  expect,
+  keyOnMap as key,
+  openWithBoard,
+  pickColor,
+  selectEffect,
+  sendColor,
+  setDryRun,
+  test,
+  writtenPayload,
+} from '@test/fixtures/app'
 
 async function saveProfile(page: Page, name: string) {
   await page.getByLabel('Profile name').fill(name)
@@ -78,8 +90,7 @@ test.describe('profiles', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Breathing in #123456')).toBeVisible()
-    const write = (await sent(page)).find((r) => r.data[0] === 0x04)!
-    const settings = write.data.slice(7, 7 + 128)
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(settings[0x0a]).toBe(2)
     expect(settings[0x3c]).toBe(3)
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x3c, 0x3d])

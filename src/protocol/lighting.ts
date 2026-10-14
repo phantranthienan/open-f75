@@ -98,11 +98,14 @@ function pickColor(effect: Effect, currentNibble: number, table: Uint8Array | nu
   return { path: 'custom', nibble: 0, table: withSlotZero(table, effect.value, rgb) }
 }
 
+/** The colour nibble (and colour-table patch) for the choice, or null to leave the nibble as the board has it. */
 function chooseColor(effect: Effect, currentNibble: number, table: Uint8Array | null, color: LightingChoice['color']): ColorPick | null {
-  if (color === 'colorful' && effect.colorful) return { path: 'colorful', nibble: COLORFUL, table: null }
-  if (effect.color && color !== 'colorful' && color !== 'own') return pickColor(effect, currentNibble, table, color)
-  if (effect.colorful && !effect.color) return { path: 'own', nibble: 0, table: null }
-  return null
+  // Rainbow, per-key and off have no colour control.
+  if (!effect.color && !effect.colorful) return null
+  if (color === 'colorful') return effect.colorful ? { path: 'colorful', nibble: COLORFUL, table: null } : null
+  // A colourful-only effect that isn't colourful shows its own colours: the driver's "random off".
+  if (!effect.color) return { path: 'own', nibble: 0, table: null }
+  return color === 'own' ? null : pickColor(effect, currentNibble, table, color)
 }
 
 /**

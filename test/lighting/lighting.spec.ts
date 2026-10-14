@@ -2,6 +2,7 @@ import {
   BOARD,
   CONNECT_COMMANDS,
   READ_LIGHTING,
+  WRITE,
   boardState,
   changedOffsets,
   commands,
@@ -11,20 +12,11 @@ import {
   pickColor,
   selectEffect,
   sendColor,
-  sent,
   setDryRun,
   test,
+  writtenPayload,
 } from '@test/fixtures/app'
 import type { Page } from '@playwright/test'
-
-const SETTINGS_WRITE = 0x04
-const COLOR_TABLE_WRITE = 0x0a
-const payloadOf = (data: number[], length: number) => data.slice(7, 7 + length)
-
-async function written(page: Page, cmd: number, length: number) {
-  const write = (await sent(page)).find((r) => r.data[0] === cmd)
-  return write ? payloadOf(write.data, length) : null
-}
 
 /** Connected to the owner's board (Fixed on, white, brightness 7) with dry run off. */
 async function live(page: Page, board = {}) {
@@ -59,10 +51,10 @@ test.describe('lighting', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Breathing, colourful (settings page only)')).toBeVisible()
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x3c, 0x3d])
     expect([settings[0x0a], settings[0x3c], settings[0x3d]]).toEqual([2, 5, 0x27])
-    expect(await written(page, COLOR_TABLE_WRITE, 512)).toBeNull()
+    expect(await writtenPayload(page, WRITE.colorTable, 512)).toBeNull()
     expect((await boardState(page)).settings).toEqual(settings)
   })
 
@@ -74,10 +66,10 @@ test.describe('lighting', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Raindrops in #123456 (custom colour, colour table + settings page)')).toBeVisible()
-    const table = (await written(page, COLOR_TABLE_WRITE, 512))!
+    const table = (await writtenPayload(page, WRITE.colorTable, 512))!
     expect(changedOffsets(BOARD.colorTable, table)).toEqual([105, 106, 107])
     expect(table.slice(105, 108)).toEqual([0x12, 0x34, 0x56])
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x43])
     expect([settings[0x0a], settings[0x43]]).toEqual([5, 0x40]) // speed 4 kept, colour slot 0
   })
@@ -91,7 +83,7 @@ test.describe('lighting', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Rainbow (settings page only)')).toBeVisible()
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x3f])
     expect(settings[0x3f]).toBe(0x17) // speed 1, the board's colour nibble kept
   })
@@ -103,7 +95,7 @@ test.describe('lighting', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Shadow disappear (settings page only)')).toBeVisible()
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x4b])
     expect(settings[0x4b]).toBe(0x40)
   })
@@ -115,7 +107,7 @@ test.describe('lighting', () => {
     await sendColor(page)
 
     await expect(page.getByText('Saved Off (settings page only)')).toBeVisible()
-    const settings = (await written(page, SETTINGS_WRITE, 128))!
+    const settings = (await writtenPayload(page, WRITE.settings, 128))!
     expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a])
     expect(settings[0x0a]).toBe(0)
   })

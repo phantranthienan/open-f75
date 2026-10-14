@@ -41,7 +41,7 @@ export function hasColorTableMarker(table: Uint8Array): boolean {
   return table.length === COLOR_TABLE_LENGTH && sameBytes(table.subarray(MARKER_AT, MARKER_AT + 2), MARKER)
 }
 
-export function slotOffset(row: number, slot: number): number {
+function slotOffset(row: number, slot: number): number {
   return row * ROW_LENGTH + slot * 3
 }
 

@@ -30,6 +30,10 @@ export function useSession() {
     setIdentity(next?.identity ?? null)
     setBoard(null)
   }, [])
+  /** Keeps a board state, unless that keyboard was disconnected while it was read. */
+  const keepBoard = useCallback((kb: Keyboard, state: BoardState) => {
+    if (keyboardRef.current === kb) setBoard(state)
+  }, [])
   const [busy, setBusy] = useState(false)
 
   // Dry run always starts on. The guard reads the ref, so a toggle applies to the next packet.
@@ -79,10 +83,10 @@ export function useSession() {
       }
       void run('Identify', async (k) => {
         await k.identify()
-        if (k.assessment.canSend) setBoard(await k.readBoard())
+        if (k.assessment.canSend) keepBoard(k, await k.readBoard())
       })
     },
-    [transport, setKeyboard, run],
+    [transport, setKeyboard, run, keepBoard],
   )
 
   // No automatic reconnect: the board is only opened by a click on Connect, after
@@ -120,10 +124,10 @@ export function useSession() {
     (): Promise<Outcome<BoardState>> =>
       run('Read board', async (kb) => {
         const state = await kb.readBoard()
-        setBoard(state)
+        keepBoard(kb, state)
         return state
       }),
-    [run],
+    [run, keepBoard],
   )
 
   /** Runs a write and keeps the board state it read back. */
@@ -131,10 +135,10 @@ export function useSession() {
     (label: string, task: (kb: Keyboard) => Promise<Applied>): Promise<Outcome<Omit<Applied, 'board'>>> =>
       run(label, async (kb) => {
         const { board: after, ...applied } = await task(kb)
-        setBoard(after)
+        keepBoard(kb, after)
         return applied
       }),
-    [run],
+    [run, keepBoard],
   )
   const applyLighting = useCallback((choice: LightingChoice) => apply('Lighting', (kb) => kb.applyLighting(choice)), [apply])
   const applyPerKey = useCallback((colors: KeyColors) => apply('Per-key colours', (kb) => kb.applyPerKey(colors)), [apply])
