@@ -5,7 +5,7 @@ import { Label } from '@/ui/components/ui/label'
 import { Switch } from '@/ui/components/ui/switch'
 import type { BoardState } from '@/keyboard'
 import { errorMessage } from '@/log'
-import { EFFECTS, MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY } from '@/protocol/effects'
+import { MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY, type Effect } from '@/protocol/effects'
 import {
   describeChoice,
   describeWrites,
@@ -18,7 +18,7 @@ import {
 import { ColorPicker } from '@/ui/components/color-picker'
 import { Pane } from '@/ui/components/pane'
 import { SendButton } from '@/ui/components/send-button'
-import type { Lighting } from '@/ui/hooks/use-lighting'
+import { LIGHTING_EFFECTS, type Lighting } from '@/ui/hooks/use-lighting'
 import type { Session } from '@/ui/hooks/use-session'
 import { resultMessage } from '@/ui/lib/result-message'
 import { cn } from '@/ui/lib/utils'
@@ -69,8 +69,15 @@ function hint(board: BoardState, choice: LightingChoice): string {
   } catch (err) {
     return errorMessage(err)
   }
-  const { effect } = choice
   if (plan.changes.length === 0) return 'the board already shows this · Send writes nothing'
+  // The key colours stay stored; the keys pane's Send makes them live again.
+  if (liveEffect(board.settings)?.value === PER_KEY) {
+    return `Send switches the board from your key colours to ${choice.effect.name} · ${describeWrites(plan)}`
+  }
+  return planHint(plan, choice.effect)
+}
+
+function planHint(plan: LightingPlan, effect: Effect): string {
   switch (plan.colorPath) {
     case 'firmware':
       return `colour already in the effect's row (slot ${plan.colorIndex}) · ${describeWrites(plan)}, the path confirmed on an F75`
@@ -82,12 +89,11 @@ function hint(board: BoardState, choice: LightingChoice): string {
       return `${effect.name} uses its own colours here (AULA's driver sets none for it)`
     default:
       if (effect.value === OFF) return 'off · writes the effect byte only'
-      if (effect.value === PER_KEY) return 'per-key · shows the colours stored on the board'
       return `${effect.name} has no colour setting`
   }
 }
 
-/** Phase 3: every effect, with its brightness, speed and colour, starting from what the board shows. */
+/** Phase 3: every whole-board effect, with its brightness, speed and colour, starting from what the board shows. */
 export function LightingPane({ session, lighting, className }: { session: Session; lighting: Lighting; className?: string }) {
   const [status, setStatus] = useState<string | null>(null)
   const { board } = session
@@ -106,6 +112,17 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
       meta={boardSummary(board)}
       className={className}
       bodyClassName="flex flex-col gap-4"
+      footer={
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground">
+            {board ? hint(board, lighting.choice) : 'Connect the board: its lighting is read first, then you can change it.'}
+          </p>
+          <div className="flex items-center gap-3">
+            <SendButton dryRun={session.dryRun} disabled={!session.canSend || !board} onClick={() => void onSend()} />
+            {status && <p role="status" className="leading-snug">{status}</p>}
+          </div>
+        </div>
+      }
       actions={
         <Button
           variant="ghost"
@@ -140,7 +157,7 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
           onChange={(e) => lighting.selectEffect(Number(e.target.value))}
           className="h-8 rounded-md border border-input bg-transparent px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
-          {EFFECTS.map((e) => (
+          {LIGHTING_EFFECTS.map((e) => (
             <option key={e.value} value={e.value} className="bg-popover">
               {e.name}
             </option>
@@ -166,15 +183,6 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
       </div>
 
       <ColorPicker value={lighting.color} onChange={lighting.setColor} />
-
-      <p className="text-xs text-muted-foreground">
-        {board ? hint(board, lighting.choice) : 'Connect the board: its lighting is read first, then you can change it.'}
-      </p>
-
-      <div className="flex flex-col items-start gap-2">
-        <SendButton dryRun={session.dryRun} disabled={!session.canSend || !board} onClick={() => void onSend()} />
-        {status && <p className="text-xs leading-relaxed">{status}</p>}
-      </div>
     </Pane>
   )
 }

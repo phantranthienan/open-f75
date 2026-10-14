@@ -117,6 +117,30 @@ test.describe('per-key colours', () => {
     expect((await boardState(page)).perKey).toEqual(BOARD.perKey)
   })
 
+  test('after the key colours, the lighting pane still switches the whole board to a colour', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
+    await setDryRun(page, false)
+    await pickColor(page, '#ff0000')
+    await key(page, 'Esc').click()
+    await sendKeyColors(page)
+    await expect(page.getByText('board: Per-key')).toBeVisible()
+
+    // Per-key isn't one of the lighting pane's effects: it stays on Fixed on.
+    await expect(page.getByLabel('Effect')).toHaveValue('1')
+    await expect(page.getByLabel('Effect').getByRole('option', { name: 'Per-key' })).toHaveCount(0)
+    await pickColor(page, '#00ff00')
+    await expect(page.getByText('Send switches the board from your key colours to Fixed on · firmware colour, settings page only')).toBeVisible()
+    await sendColor(page)
+
+    await expect(page.getByText('Saved Fixed on in #00ff00')).toBeVisible()
+    const { settings, perKey } = await boardState(page)
+    expect([settings[0x09], settings[0x0a]]).toEqual([0, 1])
+    expect(perKey[R + LED.Esc]).toBe(255) // the key colours stay stored for the next per-key Send
+    await expect(page.getByText('board: Fixed on')).toBeVisible()
+    await expect(page.getByText('Send switches the board from Fixed on to these key colours.')).toBeVisible()
+  })
+
   test('sending a lighting change keeps the painting in progress', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)

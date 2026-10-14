@@ -1,11 +1,15 @@
 import { useId, type ReactNode } from 'react'
 import { cn } from '@/ui/lib/utils'
 
-/** A terminal-style pane: a bordered box with its title set into the top border. */
+/**
+ * A terminal-style pane: a bordered box with its title set into the top border.
+ * The body scrolls when the pane is short; the footer, if any, always shows.
+ */
 export function Pane({
   title,
   meta,
   actions,
+  footer,
   className,
   bodyClassName,
   children,
@@ -15,6 +19,8 @@ export function Pane({
   meta?: ReactNode
   /** Small controls set into the top border, on the right. */
   actions?: ReactNode
+  /** Kept in view below the body, e.g. a Send button and what it did. */
+  footer?: ReactNode
   className?: string
   bodyClassName?: string
   children: ReactNode
@@ -30,6 +36,7 @@ export function Pane({
         {actions && <div className="ml-auto flex shrink-0 items-center gap-0.5 bg-background px-1">{actions}</div>}
       </div>
       <div className={cn('min-h-0 flex-1 overflow-auto px-3 pt-4 pb-3', bodyClassName)}>{children}</div>
+      {footer && <div className="shrink-0 border-t px-3 py-2 text-xs">{footer}</div>}
     </section>
   )
 }

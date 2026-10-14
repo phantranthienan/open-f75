@@ -74,7 +74,8 @@ test.describe('static colour over WebHID', () => {
     perKey[0x0a] = 21
     await openWithBoard(page, { settings: perKey })
     await connectF75(page)
-    await expect(page.getByLabel('Effect')).toHaveValue('21') // the controls start from the board
+    await expect(page.getByText('board: Per-key')).toBeVisible()
+    await expect(page.getByLabel('Effect')).toHaveValue('1') // per-key is the keys pane's; the lighting pane edits Fixed on
     await setDryRun(page, false)
     await selectEffect(page, 'Fixed on')
     await pickColor(page, '#00ff00')
