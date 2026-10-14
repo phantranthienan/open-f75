@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { BoardState } from '@/keyboard'
 import { formatHexColor, parseHexColor, sameBytes } from '@/protocol/bytes'
 import { decodePerKey, type KeyColors } from '@/protocol/per-key'
@@ -24,17 +24,20 @@ export function useKeyColors(board: BoardState | null) {
     setColors(fromBoard(stored))
   }
 
-  const update = (change: (next: Map<number, string>) => void) =>
+  /** Sets one key; null turns it off. Painting a key its own colour changes nothing, so nothing re-renders. */
+  const paint = useCallback((led: number, hex: string | null) => {
     setColors((current) => {
+      if (hex ? current.get(led) === hex : !current.has(led)) return current
       const next = new Map(current)
-      change(next)
+      if (hex) next.set(led, hex)
+      else next.delete(led)
       return next
     })
+  }, [])
 
   return {
     colors,
-    /** Sets one key; null turns it off. */
-    paint: (led: number, hex: string | null) => update((next) => (hex ? next.set(led, hex) : next.delete(led))),
+    paint,
     fill: (hex: string) => setColors(new Map(F75_KEYS.map((k) => [k.led, hex]))),
     clear: () => setColors(new Map()),
     /** Back to what the board stores, when it could be read. */

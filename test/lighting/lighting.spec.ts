@@ -1,7 +1,7 @@
 import {
   BOARD,
   CONNECT_COMMANDS,
-  READ_LIGHTING,
+  READ,
   WRITE,
   boardState,
   changedOffsets,
@@ -124,6 +124,6 @@ test.describe('lighting', () => {
     await expect(page.getByText('board: Breathing · 3/9')).toBeVisible()
     await expect(page.getByLabel('Effect')).toHaveValue('2')
     await expect(page.getByLabel('Brightness')).toHaveValue('3')
-    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ.board])
   })
 })

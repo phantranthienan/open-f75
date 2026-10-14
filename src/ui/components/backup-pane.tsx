@@ -14,7 +14,6 @@ function download(backup: Backup): string {
 
 export function BackupPane({ session, className }: { session: Session; className?: string }) {
   const [status, setStatus] = useState<string | null>(null)
-  const canRun = session.connected && !session.busy && session.assessment?.canSend === true
 
   async function onBackup() {
     const outcome = await session.backup()
@@ -29,7 +28,7 @@ export function BackupPane({ session, className }: { session: Session; className
       <p className="text-muted-foreground">
         Read before you write: saves the identity, the 128-byte settings page, the 512-byte colour table and the 378 bytes of per-key colours as JSON.
       </p>
-      <Button variant="secondary" size="sm" disabled={!canRun} onClick={() => void onBackup()}>
+      <Button variant="secondary" size="sm" disabled={!session.canSend} onClick={() => void onBackup()}>
         <Download />
         Back up config
       </Button>

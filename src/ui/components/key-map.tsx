@@ -1,4 +1,4 @@
-import type { KeyboardEvent, PointerEvent } from 'react'
+import { memo, type KeyboardEvent, type PointerEvent } from 'react'
 import { parseHexColor } from '@/protocol/bytes'
 import { F75_KEYS, KEYS_VIEW_BOX, type Key } from '@/protocol/keys'
 import type { KeyHexColors } from '@/ui/hooks/use-key-colors'
@@ -14,7 +14,8 @@ function labelColor(hex: string): string {
   return luminance > 0.25 ? '#11111b' : '#ffffff'
 }
 
-function KeyCap({ k, hex, onPaint }: { k: Key; hex: string | undefined; onPaint: (key: Key) => void }) {
+/** Memoised: while painting, only the key whose colour changed renders again. */
+const KeyCap = memo(function KeyCap({ k, hex, onPaint }: { k: Key; hex: string | undefined; onPaint: (key: Key) => void }) {
   const onPointerDown = (e: PointerEvent<SVGGElement>) => {
     // Touch captures the pointer to the first key; release it so a drag reaches the others.
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
@@ -56,7 +57,7 @@ function KeyCap({ k, hex, onPaint }: { k: Key; hex: string | undefined; onPaint:
       </text>
     </g>
   )
-}
+})
 
 /**
  * The F75 as AULA's driver draws it, one shape per key in its stored colour.

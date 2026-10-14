@@ -1,10 +1,9 @@
 import { Copy, Trash2 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import type { LogEntry, LogKind } from '@/log'
 import { Pane } from '@/ui/components/pane'
 import { cn } from '@/ui/lib/utils'
-import type { Session } from '@/ui/hooks/use-session'
 
 const KIND: Record<LogKind, { label: string; className: string }> = {
   tx: { label: 'TX', className: 'text-signal-info' },
@@ -15,14 +14,15 @@ const KIND: Record<LogKind, { label: string; className: string }> = {
   info: { label: 'INFO', className: 'text-muted-foreground' },
 }
 
-const time = (at: number) =>
-  new Date(at).toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    fractionalSecondDigits: 3,
-    hour12: false,
-  })
+// One formatter for every line: building one per call is slow, and the log can hold 2000 lines.
+const TIME = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  fractionalSecondDigits: 3,
+  hour12: false,
+})
+const time = (at: number) => TIME.format(at)
 
 function asText(entries: readonly LogEntry[]): string {
   return entries
@@ -46,9 +46,19 @@ function Hex({ hex }: { hex: string }) {
   )
 }
 
-/** Every frame as hex, logged before it is sent, like a terminal. */
-export function LogPane({ session, className }: { session: Session; className?: string }) {
-  const { entries } = session
+/**
+ * Every frame as hex, logged before it is sent, like a terminal. Memoised: it
+ * renders again only when the log changes, not on every wheel or paint move.
+ */
+export const LogPane = memo(function LogPane({
+  entries,
+  onClear,
+  className,
+}: {
+  entries: readonly LogEntry[]
+  onClear: () => void
+  className?: string
+}) {
   const scroller = useRef<HTMLDivElement>(null)
   // Follow new entries only while the log is scrolled to the bottom.
   const following = useRef(true)
@@ -84,7 +94,7 @@ export function LogPane({ session, className }: { session: Session; className?: 
             aria-label="Clear log"
             title="Clear log"
             className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            onClick={session.clearLog}
+            onClick={onClear}
           >
             <Trash2 />
           </Button>
@@ -118,4 +128,4 @@ export function LogPane({ session, className }: { session: Session; className?: 
       </div>
     </Pane>
   )
-}
+})

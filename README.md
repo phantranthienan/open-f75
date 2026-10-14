@@ -111,19 +111,22 @@ TX    settings read                    06 84 00 00 01 00 80 00
 RX    reply to 0x84 (136 bytes)        06 84 00 00 01 00 80 00 + 128 bytes of settings
 TX    colour table read                06 8a 00 00 01 00 00 02
 RX    reply to 0x8a (520 bytes)        06 8a 00 00 01 00 00 02 + 512 bytes of colour table
+TX    per-key colours read             06 86 00 00 01 00 7a 01
+RX    reply to 0x86 (386 bytes)        06 86 00 00 01 00 7a 01 + 378 bytes of key colours
 ```
 
 On **Dry run** (or **Send to keyboard**), with Fixed on and `#ff6600`:
 
 ```
+INFO  Fixed on in #ff6600: reading settings page and colour table
 TX    settings read                    06 84 00 00 01 00 80 00
 RX    reply to 0x84 (136 bytes)        06 84 00 00 01 00 80 00 + 128 bytes of settings
 TX    colour table read                06 8a 00 00 01 00 00 02
 RX    reply to 0x8a (520 bytes)        06 8a 00 00 01 00 00 02 + 512 bytes of colour table
-INFO  Plan: custom colour into slot 0 of the effect's colour-table row, then select slot 0 (as AULA's driver does); colour table + settings
+INFO  Plan: custom colour into slot 0 of the effect's colour-table row, then select slot 0 (as AULA's driver does); colour table + settings page
 INFO    colour table 0x16: 0xff -> 0x66
 INFO    colour table 0x17: 0xff -> 0x00
-INFO    settings 0x3b: 0x46 -> 0x40
+INFO    settings page 0x3b: 0x46 -> 0x40
 DRY   colour table write               06 0a 00 00 01 00 00 02 + the patched 512 bytes
 DRY   settings write                   06 04 00 00 01 00 80 00 + the patched 128 bytes
 INFO  Dry run: 2 write(s) logged, none sent
@@ -258,14 +261,14 @@ The only real risk to a keyboard is firmware. Everything here is meant to make t
 Read in this order. Each step builds on the one before. The line counts are rough.
 
 1. **`src/protocol/wired.ts`** (~140 lines): the frame. Start with the comment at the top, which has the byte layout and its sources. Then read `buildReadRequest`, `buildWrite` and `parseReply`, whose comment explains why short replies are accepted.
-2. **`src/protocol/effects.ts`**, **`settings.ts`**, **`color-table.ts`** (~70 each): what the board stores. `effects.ts` lists the 20 effects and their controls; the top comments of the other two map the settings page and the colour table. Then **`lighting.ts`** (~150): `planLighting`, the whole lighting decision in one pure function.
+2. **`src/protocol/effects.ts`**, **`settings.ts`**, **`color-table.ts`**, **`per-key.ts`** (~45–90 each): what the board stores. `effects.ts` lists the 20 effects and their controls; the top comments of the others map the settings page, the colour table and the per-key colours. **`regions.ts`** (~45) names the three regions once: how each is read and written, and its length. Then **`lighting.ts`** (~230): `colorSetting`, the one rule for how a colour applies to an effect, and `planLighting` and `planPerKey`, the whole lighting decision as pure functions.
 3. **`src/protocol/ids.ts`** (~45): why the USB IDs aren't enough, and the identity bytes of each model.
 4. **`src/allowlist.ts`** (~125): `RULES` and `inspect()`, exactly what may be sent and why a frame is refused.
 5. **`src/safe-send.ts`** (~45): the guard. It's short; read all of it.
 6. **`src/device-check.ts`** (~100): the four checks, `canIdentify` versus `canSend`, and the "blocked" messages the device pane shows.
-7. **`src/keyboard.ts`** (~290): the operations. Read `identify()`, `applyLighting()` and `backup()`, then the private helpers `query`, `transfer`, `commit` and `verify` at the bottom.
+7. **`src/keyboard.ts`** (~345): the operations. Read `identify()`, `readBoard()`, `applyLighting()`, `applyPerKey()` and `backup()`, then the private helpers `apply`, `verify`, `query` and `transfer` at the bottom.
 8. **`src/transport.ts`** (~75), then **`src/transports/webhid.ts`** (~155): the hardware edge. It opens every interface of the board, sends each report to the interface that declares it, and makes the second allowlist check.
-9. **`src/ui/hooks/use-session.ts`** (~135): how the UI wires all of the above together. It covers Connect, the dry-run ref the guard reads, and the log store.
+9. **`src/ui/hooks/use-session.ts`** (~170): how the UI wires all of the above together. It covers Connect, the dry-run ref the guard reads, and the log store.
 10. **`src/ui/App.tsx`** and **`src/ui/components/`**: the screen. Start from `App.tsx` for the grid, then the pane you care about.
 11. **`test/fixtures/fake-hid.ts`**, then any spec in `test/`. The test names say in plain English what the app promises.
 
@@ -298,6 +301,7 @@ src/
     effects.ts             the 20 effects: 0x0a value, settings slot, which controls each takes
     settings.ts            the settings page: offsets, the end marker, reading and writing a slot
     color-table.ts         the colour table: rows of 7 colours, the layout check
+    regions.ts             the three regions: read and write commands, length, how the log names them
     lighting.ts            planLighting and planPerKey: the read-modify-write plans
     per-key.ts             the per-key colours: three 126-byte planes by LED index
     keys.ts                the F75's keys as AULA's driver draws them, with their LED indices
@@ -318,8 +322,9 @@ src/
       use-session.ts       wires transport, guard, keyboard and log for the UI
       use-lighting.ts      the lighting being edited, loaded from each read of the board
       use-key-colors.ts    the per-key colours being painted, loaded from the board
-      use-profiles.ts      named profiles in localStorage
-      use-saved-colors.ts  saved colours in localStorage
+      use-stored-list.ts   a list kept in localStorage, checked item by item as it loads
+      use-profiles.ts      named profiles, on use-stored-list
+      use-saved-colors.ts  saved colours, on use-stored-list
       use-theme.ts         the theme, in localStorage, applied to <html data-theme>
     components/
       top-bar.tsx          title, connection light, theme switcher, dry-run switch, Connect
@@ -391,7 +396,8 @@ test/
                      Fails any test that logs a console error or throws.
     fake-hid.ts      the fake F75: answers the 0x06 reads, keeps what is written,
                      records every report sent (window.__fakeHid)
-    f75.ts           identity, settings page and colour table from the owner's real F75
+    f75.ts           identity, settings page and colour table from the owner's real F75,
+                     and BOARD, the fake F75 every test starts from
   connect/           identity read, reply formats, other models and product IDs,
                      no auto-connect, unplug, no WebHID
   safety/            the transport refuses everything off the allowlist, even with the guard bypassed
@@ -463,12 +469,12 @@ CHROMIUM_PATH=/path/to/chromium npm test   # use a browser that is already insta
 - **Interface**: one function of a USB device. The F75 has several (keyboard, media keys, the vendor channel). A browser may list each one as a separate entry.
 - **VID / PID**: USB vendor and product IDs. `258A` is Sinowealth, the chip maker many keyboard brands use, which is why the IDs don't identify the model.
 - **Identity**: the 6 bytes the board answers to command `0x82`, parameter `0x01`. They name the model.
-- **Settings page / colour table**: the two regions of the board's memory this app reads and writes. Both are saved on the board and survive a replug.
+- **Settings page / colour table / per-key colours**: the three regions of the board's memory this app reads and writes (`src/protocol/regions.ts`). All three are saved on the board and survive a replug.
 - **Fixed on**: AULA's name for the single-colour effect, effect 1.
 - **Firmware colour / custom colour**: one of the 7 colours selected by the colour nibble, or any RGB value written into the colour table.
 - **Dry run**: writes are logged but not sent; reads still go out.
 - **Read-modify-write**: read a region, change only the bytes needed, write it back.
-- **`5A A5`**: the end marker both regions carry. Its absence means a bad read or a bad frame.
+- **`5A A5`**: the end marker the settings page and the colour table carry. Its absence means a bad read or a bad frame.
 
 ## Sources and references
 

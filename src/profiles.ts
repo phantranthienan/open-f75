@@ -6,11 +6,12 @@
  * Send. Everything read from storage or a file is checked here, so a damaged
  * or hand-edited entry can never reach the controls.
  */
+import { isHexColor } from '@/protocol/bytes'
 import { MAX_BRIGHTNESS, MAX_SPEED, findEffect } from '@/protocol/effects'
 import { LED_SLOTS } from '@/protocol/per-key'
 
-export interface Profile {
-  name: string
+/** What the lighting pane's controls hold. */
+export interface LightingControls {
   /** The effect's 0x0a value. */
   effect: number
   brightness: number
@@ -18,11 +19,15 @@ export interface Profile {
   colorful: boolean
   /** #rrggbb, the colour the effect uses and the keys are painted with. */
   color: string
+}
+
+export interface Profile extends LightingControls {
+  name: string
   /** LED index -> #rrggbb; keys left out are off. */
   keys: Record<string, string>
 }
 
-export interface ProfilesFile {
+interface ProfilesFile {
   format: 'open-f75-profiles'
   version: 1
   profiles: Profile[]
@@ -30,7 +35,6 @@ export interface ProfilesFile {
 
 export const MAX_NAME_LENGTH = 40
 
-const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/.test(v)
 const isUpTo = (v: unknown, max: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max
 
 /** A valid profile, or null. Keys with a bad index or colour are dropped. */
@@ -40,7 +44,7 @@ export function parseProfile(value: unknown): Profile | null {
   const name = typeof p.name === 'string' ? p.name.trim().slice(0, MAX_NAME_LENGTH) : ''
   if (!name || !isUpTo(p.effect, 0xff) || !findEffect(p.effect)) return null
   if (!isUpTo(p.brightness, MAX_BRIGHTNESS) || !isUpTo(p.speed, MAX_SPEED)) return null
-  if (typeof p.colorful !== 'boolean' || !isHex(p.color)) return null
+  if (typeof p.colorful !== 'boolean' || !isHexColor(p.color)) return null
   const keys = typeof p.keys === 'object' && p.keys !== null ? (p.keys as Record<string, unknown>) : {}
   return {
     name,
@@ -48,11 +52,23 @@ export function parseProfile(value: unknown): Profile | null {
     brightness: p.brightness,
     speed: p.speed,
     colorful: p.colorful,
-    color: p.color,
+    color: p.color.toLowerCase(),
     keys: Object.fromEntries(
-      Object.entries(keys).filter((entry): entry is [string, string] => isUpTo(Number(entry[0]), LED_SLOTS - 1) && isHex(entry[1])),
+      Object.entries(keys)
+        .filter((entry): entry is [string, string] => isUpTo(Number(entry[0]), LED_SLOTS - 1) && isHexColor(entry[1]))
+        .map(([led, hex]) => [led, hex.toLowerCase()]),
     ),
   }
+}
+
+/** A profile of the controls and the key colours (LED index -> #rrggbb) as they are now. */
+export function makeProfile(name: string, controls: LightingControls, keys: ReadonlyMap<number, string>): Profile {
+  return { name, ...controls, keys: Object.fromEntries(keys) }
+}
+
+/** A profile's key colours, keyed by LED index like the key painter's. */
+export function profileKeys(profile: Profile): Map<number, string> {
+  return new Map(Object.entries(profile.keys).map(([led, hex]) => [Number(led), hex]))
 }
 
 export function toProfilesFile(profiles: readonly Profile[]): string {

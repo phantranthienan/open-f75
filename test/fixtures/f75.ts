@@ -4,6 +4,8 @@
  * and the colour table (rows of 7 colours, 5A A5 at offset 506).
  */
 
+import type { FakeBoard } from '@test/fixtures/fake-hid'
+
 const bytes = (...hex: string[]) => Array.from(hex.join('').match(/../g) ?? [], (b) => parseInt(b, 16))
 
 export const F75_IDENTITY = bytes('0300000000cd')
@@ -33,3 +35,18 @@ export const F75_COLOR_TABLE = bytes(
   '0000000000000000000000000000000000000000000000000000000000000000',
   '00000000000000000000000000000000000000000000000000005aa500000000',
 )
+
+/** No per-key colours stored: 378 zero bytes. Copy it before changing it. */
+export const BLANK_PER_KEY: readonly number[] = new Array(378).fill(0)
+
+/** The owner's F75 as backed up: Fixed on, white (colour 6), brightness 7. No per-key colours stored. */
+export const BOARD: FakeBoard = {
+  identity: F75_IDENTITY,
+  settings: F75_SETTINGS,
+  colorTable: F75_COLOR_TABLE,
+  perKey: [...BLANK_PER_KEY],
+  productId: 0x010c,
+  granted: false,
+  replyFormat: 'short-with-id', // what Chrome on macOS did with the real F75
+  ignoreWrites: false,
+}

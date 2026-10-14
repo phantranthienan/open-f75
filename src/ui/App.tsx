@@ -33,7 +33,7 @@ export default function App() {
         <KeysPane session={session} keys={keys} paintColor={lighting.color} className="md:col-span-2 lg:row-start-2" />
         <div className="flex min-h-0 flex-col gap-6 md:col-span-2 lg:col-span-1 lg:col-start-3 lg:row-span-2 lg:row-start-1">
           <ProfilesPane lighting={lighting} keys={keys} />
-          <LogPane session={session} className="h-96 lg:h-auto lg:flex-1" />
+          <LogPane entries={session.entries} onClear={session.clearLog} className="h-96 lg:h-auto lg:flex-1" />
         </div>
       </main>
       <StatusLine session={session} />

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Assessment, IdentityState } from '@/device-check'
 import { Keyboard, type Applied, type Backup, type BoardState } from '@/keyboard'
-import { createLog } from '@/log'
+import { createLog, errorMessage } from '@/log'
 import type { LightingChoice } from '@/protocol/lighting'
 import type { KeyColors } from '@/protocol/per-key'
 import { createSafeSend } from '@/safe-send'
@@ -54,7 +54,7 @@ export function useSession() {
     try {
       return { ok: true, value: await task(kb) }
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err)
+      const error = errorMessage(err)
       log.add('error', `${label}: ${error}`)
       return { ok: false, error }
     } finally {
@@ -109,8 +109,7 @@ export function useSession() {
       attach(await transport.connect())
     } catch (err) {
       // Closing the WebHID chooser rejects with NotFoundError; that is not worth an error line.
-      const message = err instanceof Error ? err.message : String(err)
-      log.add(err instanceof DOMException && err.name === 'NotFoundError' ? 'info' : 'error', `Connect: ${message}`)
+      log.add(err instanceof DOMException && err.name === 'NotFoundError' ? 'info' : 'error', `Connect: ${errorMessage(err)}`)
     }
   }, [transport, attach])
 
@@ -152,6 +151,8 @@ export function useSession() {
     assessment,
     identity,
     connected: keyboard !== null,
+    /** Connected, idle and identified as an F75: the board may be read and written. */
+    canSend: keyboard !== null && !busy && assessment?.canSend === true,
     board,
     busy,
     dryRun,

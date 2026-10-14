@@ -1,9 +1,9 @@
 import { Brush, Eraser, PaintBucket, RotateCcw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { PER_KEY } from '@/protocol/effects'
-import { F75_KEYS } from '@/protocol/keys'
-import { SettingsOffset } from '@/protocol/settings'
+import { F75_KEYS, type Key } from '@/protocol/keys'
+import { liveEffect } from '@/protocol/lighting'
 import { KeyMap } from '@/ui/components/key-map'
 import { Pane } from '@/ui/components/pane'
 import { SendButton } from '@/ui/components/send-button'
@@ -28,16 +28,17 @@ export function KeysPane({
 }) {
   const [tool, setTool] = useState<Tool>('paint')
   const [status, setStatus] = useState<string | null>(null)
-  const ready = session.connected && !session.busy && session.assessment?.canSend === true && session.board !== null
-  const onBoard = session.board?.settings[SettingsOffset.effect] === PER_KEY
+  const onBoard = session.board !== null && liveEffect(session.board.settings)?.value === PER_KEY
   const lit = F75_KEYS.filter((k) => keys.colors.has(k.led)).length
+  // Stable while painting, so only the painted key re-renders (KeyMap memoises its keys).
+  const { paint } = keys
+  const onPaint = useCallback((k: Key) => paint(k.led, tool === 'paint' ? paintColor : null), [paint, tool, paintColor])
 
   async function onSend() {
     const outcome = await session.applyPerKey(keys.toRgb())
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
     const { result, plan } = outcome.value
-    const what = `the per-key effect with ${lit} key(s) lit`
-    setStatus(resultMessage(result, { what, written: 'per-key colours + settings page', changes: plan.changes.length }))
+    setStatus(resultMessage(result, plan, `the per-key effect with ${lit} key(s) lit`))
   }
 
   const toolButton = (value: Tool, label: string, Icon: typeof Brush) => (
@@ -89,14 +90,20 @@ export function KeysPane({
           {paintColor}
         </p>
         <div>
-          <SendButton dryRun={session.dryRun} label="key colours" size="sm" disabled={!ready} onClick={() => void onSend()} />
+          <SendButton
+            dryRun={session.dryRun}
+            label="key colours"
+            size="sm"
+            disabled={!session.canSend || !session.board}
+            onClick={() => void onSend()}
+          />
         </div>
         {status && <p className="leading-relaxed">{status}</p>}
       </div>
 
       <KeyMap
         colors={keys.colors}
-        onPaint={(k) => keys.paint(k.led, tool === 'paint' ? paintColor : null)}
+        onPaint={onPaint}
         className="w-full min-w-0 lg:max-h-[30vh]"
       />
     </Pane>

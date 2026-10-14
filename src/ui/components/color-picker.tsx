@@ -3,10 +3,9 @@ import { useState } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
-import { parseHexColor } from '@/protocol/bytes'
+import { isHexColor, parseHexColor } from '@/protocol/bytes'
 import { ColorWheel } from '@/ui/components/color-wheel'
 import { useSavedColors } from '@/ui/hooks/use-saved-colors'
-import { isHexColor } from '@/ui/lib/color'
 
 /** The wheel, the hex field and the user's saved colours. Colours come only from these (no presets). */
 export function ColorPicker({ value, onChange }: { value: string; onChange: (hex: string) => void }) {

@@ -39,3 +39,8 @@ export function createLog(limit = 2000): Log {
     },
   }
 }
+
+/** An error's message for a log line or a status message. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}

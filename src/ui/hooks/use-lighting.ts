@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import type { BoardState } from '@/keyboard'
-import type { Profile } from '@/profiles'
+import type { LightingControls } from '@/profiles'
 import { formatHexColor, parseHexColor } from '@/protocol/bytes'
-import { FIXED_ON, MAX_BRIGHTNESS, effectByValue, findEffect, type Effect } from '@/protocol/effects'
-import { readEffectState, type LightingChoice } from '@/protocol/lighting'
-import { SettingsOffset } from '@/protocol/settings'
+import { FIXED_ON, MAX_BRIGHTNESS, effectByValue, type Effect } from '@/protocol/effects'
+import { liveEffect, readEffectState, type LightingChoice } from '@/protocol/lighting'
 
 const DEFAULT_SPEED = 2
 
@@ -37,34 +36,30 @@ export function useLighting(board: BoardState | null) {
   const [loaded, setLoaded] = useState(board)
   if (board !== loaded) {
     setLoaded(board)
-    if (board) load(findEffect(board.settings[SettingsOffset.effect]) ?? effectByValue(FIXED_ON), board, true)
+    if (board) load(liveEffect(board.settings) ?? effectByValue(FIXED_ON), board, true)
   }
 
-  // Only an effect with the control can be colourful; the board may hold nibble 7 for others too.
-  const isColorful = effect.colorful && colorful
-  const choice: LightingChoice = {
-    effect,
-    brightness,
-    speed,
-    color: isColorful ? 'colorful' : effect.color ? parseHexColor(color) : 'own',
-  }
+  // Controls the effect doesn't have are ignored by the plan (colorSetting in protocol/lighting.ts).
+  const choice: LightingChoice = { effect, brightness, speed, colorful, color: parseHexColor(color) }
 
   return {
     effect,
     selectEffect: (value: number) => load(effectByValue(value), board, false),
-    /** Fills the controls from a saved profile. */
-    loadProfile: (p: Pick<Profile, 'effect' | 'brightness' | 'speed' | 'colorful' | 'color'>) => {
-      setEffect(effectByValue(p.effect))
-      setBrightness(p.brightness)
-      setSpeed(p.speed)
-      setColorful(p.colorful)
-      setColor(p.color)
+    /** The controls as plain values, for a profile. */
+    controls: { effect: effect.value, brightness, speed, colorful, color } satisfies LightingControls,
+    /** Fills the controls, from a saved profile. */
+    loadControls: (c: LightingControls) => {
+      setEffect(effectByValue(c.effect))
+      setBrightness(c.brightness)
+      setSpeed(c.speed)
+      setColorful(c.colorful)
+      setColor(c.color)
     },
     brightness,
     setBrightness,
     speed,
     setSpeed,
-    colorful: isColorful,
+    colorful,
     setColorful,
     color,
     setColor,

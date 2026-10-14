@@ -3,19 +3,25 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
-import { MAX_BRIGHTNESS, findEffect } from '@/protocol/effects'
-import { MAX_NAME_LENGTH, parseProfilesFile, toProfilesFile, type Profile } from '@/profiles'
+import { errorMessage } from '@/log'
+import { formatHexColor, parseHexColor } from '@/protocol/bytes'
+import { MAX_BRIGHTNESS, effectByValue } from '@/protocol/effects'
+import { colorSetting } from '@/protocol/lighting'
+import { MAX_NAME_LENGTH, makeProfile, parseProfilesFile, profileKeys, toProfilesFile, type Profile } from '@/profiles'
 import { Pane } from '@/ui/components/pane'
 import type { KeyColorsDraft } from '@/ui/hooks/use-key-colors'
 import type { Lighting } from '@/ui/hooks/use-lighting'
 import { useProfiles } from '@/ui/hooks/use-profiles'
 import { downloadText, fileStamp } from '@/ui/lib/download'
 
+/** "Breathing · 3/9 · #123456 · 1 key". */
 function summary(p: Profile): string {
-  const effect = findEffect(p.effect)!
+  const effect = effectByValue(p.effect)
   const parts = [effect.name]
   if (effect.brightness) parts.push(`${p.brightness}/${MAX_BRIGHTNESS}`)
-  if (effect.color || effect.colorful) parts.push(p.colorful && effect.colorful ? 'colourful' : p.color)
+  const color = colorSetting({ effect, colorful: p.colorful, color: parseHexColor(p.color) })
+  if (color === 'colorful') parts.push('colourful')
+  else if (color !== null && color !== 'own') parts.push(formatHexColor(color))
   const keys = Object.keys(p.keys).length
   if (keys) parts.push(`${keys} key${keys === 1 ? '' : 's'}`)
   return parts.join(' · ')
@@ -26,7 +32,7 @@ function summary(p: Profile): string {
  * and import. Loading a profile fills the controls; Send still decides.
  */
 export function ProfilesPane({ lighting, keys, className }: { lighting: Lighting; keys: KeyColorsDraft; className?: string }) {
-  const { profiles, save, remove, add } = useProfiles()
+  const { profiles, add, remove } = useProfiles()
   const [name, setName] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -36,21 +42,13 @@ export function ProfilesPane({ lighting, keys, className }: { lighting: Lighting
     const trimmed = name.trim()
     if (!trimmed) return
     const replaced = profiles.some((p) => p.name === trimmed)
-    save({
-      name: trimmed,
-      effect: lighting.effect.value,
-      brightness: lighting.brightness,
-      speed: lighting.speed,
-      colorful: lighting.colorful,
-      color: lighting.color,
-      keys: Object.fromEntries(keys.colors),
-    })
+    add([makeProfile(trimmed, lighting.controls, keys.colors)])
     setStatus(`${replaced ? 'Replaced' : 'Saved'} "${trimmed}".`)
   }
 
   function onLoad(p: Profile) {
-    lighting.loadProfile(p)
-    keys.replace(new Map(Object.entries(p.keys).map(([led, hex]) => [Number(led), hex])))
+    lighting.loadControls(p)
+    keys.replace(profileKeys(p))
     setStatus(`Loaded "${p.name}" into the controls. Send from the lighting or keys pane to put it on the board.`)
   }
 
@@ -61,7 +59,7 @@ export function ProfilesPane({ lighting, keys, className }: { lighting: Lighting
       add(incoming)
       setStatus(`Imported ${incoming.length} profile(s) from ${file.name}.`)
     } catch (err) {
-      setStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`)
+      setStatus(`Import failed: ${errorMessage(err)}`)
     } finally {
       if (fileInput.current) fileInput.current.value = '' // the same file can be picked again
     }

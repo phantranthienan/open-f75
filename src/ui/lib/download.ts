@@ -1,6 +1,6 @@
-/** Offers `text` as a file download named `name`. */
-export function downloadText(name: string, text: string, type = 'application/json'): void {
-  const url = URL.createObjectURL(new Blob([text], { type }))
+/** Offers JSON text as a file download named `name`. */
+export function downloadText(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
   const a = Object.assign(document.createElement('a'), { href: url, download: name })
   a.click()
   URL.revokeObjectURL(url)

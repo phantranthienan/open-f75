@@ -28,7 +28,7 @@ export function SendButton({
       className={cn(dryRun && 'border-signal-warn text-signal-warn hover:bg-signal-warn/10 hover:text-signal-warn')}
     >
       {dryRun ? <FlaskConical /> : <Send />}
-      {dryRun ? `Dry run${label && ` ${label}`}` : label ? `Send ${label}` : 'Send to keyboard'}
+      {dryRun ? `Dry run${label ? ` ${label}` : ''}` : `Send ${label || 'to keyboard'}`}
     </Button>
   )
 }

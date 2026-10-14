@@ -4,11 +4,17 @@ import { Button } from '@/ui/components/ui/button'
 import { Label } from '@/ui/components/ui/label'
 import { Switch } from '@/ui/components/ui/switch'
 import type { BoardState } from '@/keyboard'
-import { formatHexColor } from '@/protocol/bytes'
-import { COLOR_NAMES, FIRMWARE_COLORS } from '@/protocol/color-table'
-import { EFFECTS, MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY, findEffect } from '@/protocol/effects'
-import { readEffectState, type LightingChoice, type LightingPlan } from '@/protocol/lighting'
-import { SettingsOffset } from '@/protocol/settings'
+import { errorMessage } from '@/log'
+import { EFFECTS, MAX_BRIGHTNESS, MAX_SPEED, OFF, PER_KEY } from '@/protocol/effects'
+import {
+  describeChoice,
+  describeWrites,
+  liveEffect,
+  planLighting,
+  readEffectState,
+  type LightingChoice,
+  type LightingPlan,
+} from '@/protocol/lighting'
 import { ColorPicker } from '@/ui/components/color-picker'
 import { Pane } from '@/ui/components/pane'
 import { SendButton } from '@/ui/components/send-button'
@@ -16,8 +22,6 @@ import type { Lighting } from '@/ui/hooks/use-lighting'
 import type { Session } from '@/ui/hooks/use-session'
 import { resultMessage } from '@/ui/lib/result-message'
 import { cn } from '@/ui/lib/utils'
-
-const FIRMWARE_HEX = FIRMWARE_COLORS.map(formatHexColor)
 
 /** A labelled 0..max slider with its value; disabled with a reason when the effect has no such control. */
 function Range(props: { label: string; value: number; max: number; onChange: (n: number) => void; disabledReason: string | null }) {
@@ -48,41 +52,39 @@ function Range(props: { label: string; value: number; max: number; onChange: (n:
   )
 }
 
-/** "Fixed on in #00ff00", "Breathing, colourful", "Rainbow". */
-function describe({ effect, color }: LightingChoice): string {
-  if (color === 'colorful') return `${effect.name}, colourful`
-  if (effect.color && color !== 'own') return `${effect.name} in ${formatHexColor(color)}`
-  return effect.name
-}
-
-function whatIsWritten(plan: LightingPlan): string {
-  if (plan.colorPath === 'custom') return 'custom colour, colour table + settings page'
-  if (plan.colorPath === 'firmware') return 'firmware colour, settings page only'
-  return 'settings page only'
-}
-
 /** "board: Fixed on · 7/9", for the pane's border. */
 function boardSummary(board: BoardState | null): string {
   if (!board) return 'board not read'
-  const value = board.settings[SettingsOffset.effect]
-  const live = findEffect(value)
-  if (!live) return `board: effect ${value}`
+  const live = liveEffect(board.settings)
+  if (!live) return "board: an effect AULA's profile doesn't list"
   const state = readEffectState(board.settings, board.colorTable, live)
   return live.brightness && state ? `board: ${live.name} · ${state.brightness}/${MAX_BRIGHTNESS}` : `board: ${live.name}`
 }
 
-/** What Send will do with the current choice, before anything is read. */
-function hint(lighting: Lighting): string {
-  const { effect, colorful, color } = lighting
-  if (effect.value === OFF) return 'off · writes the effect byte only'
-  if (effect.value === PER_KEY) return 'per-key · shows the colours stored on the board'
-  if (colorful) return 'colourful · the effect picks its colours itself; settings page only'
-  if (effect.colorful && !effect.color) return `${effect.name} uses its own colours here (AULA's driver sets none for it)`
-  if (!effect.color) return `${effect.name} has no colour setting`
-  const firmware = FIRMWARE_HEX.indexOf(color)
-  return firmware >= 0
-    ? `firmware colour ${firmware} (${COLOR_NAMES[firmware]}) · normally one settings byte, confirmed on an F75`
-    : "custom colour · also writes the effect's colour-table row, only if your board's table has the expected layout"
+/** What Send will do, worked out with the same plan Send uses on the board as last read. */
+function hint(board: BoardState, choice: LightingChoice): string {
+  let plan: LightingPlan
+  try {
+    plan = planLighting(board.settings, board.colorTable, choice)
+  } catch (err) {
+    return errorMessage(err)
+  }
+  const { effect } = choice
+  if (plan.changes.length === 0) return 'the board already shows this · Send writes nothing'
+  switch (plan.colorPath) {
+    case 'firmware':
+      return `colour already in the effect's row (slot ${plan.colorIndex}) · ${describeWrites(plan)}, the path confirmed on an F75`
+    case 'custom':
+      return `custom colour into slot 0 of the effect's colour-table row · ${describeWrites(plan)}`
+    case 'colorful':
+      return `colourful · the effect picks its colours itself · ${describeWrites(plan)}`
+    case 'own':
+      return `${effect.name} uses its own colours here (AULA's driver sets none for it)`
+    default:
+      if (effect.value === OFF) return 'off · writes the effect byte only'
+      if (effect.value === PER_KEY) return 'per-key · shows the colours stored on the board'
+      return `${effect.name} has no colour setting`
+  }
 }
 
 /** Phase 3: every effect, with its brightness, speed and colour, starting from what the board shows. */
@@ -90,13 +92,12 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
   const [status, setStatus] = useState<string | null>(null)
   const { board } = session
   const { effect } = lighting
-  const ready = session.connected && !session.busy && session.assessment?.canSend === true
 
   async function onSend() {
     const outcome = await session.applyLighting(lighting.choice)
     if (!outcome.ok) return setStatus(`Stopped: ${outcome.error}`)
     const { result, plan } = outcome.value
-    setStatus(resultMessage(result, { what: describe(lighting.choice), written: whatIsWritten(plan), changes: plan.changes.length }))
+    setStatus(resultMessage(result, plan, describeChoice(lighting.choice)))
   }
 
   return (
@@ -111,7 +112,7 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
           size="icon-xs"
           aria-label="Read board"
           title="Read the board's lighting again"
-          disabled={!ready}
+          disabled={!session.canSend}
           className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
           onClick={() => void session.readBoard()}
         >
@@ -166,10 +167,12 @@ export function LightingPane({ session, lighting, className }: { session: Sessio
 
       <ColorPicker value={lighting.color} onChange={lighting.setColor} />
 
-      <p className="text-xs text-muted-foreground">{board ? hint(lighting) : 'Connect the board: its lighting is read first, then you can change it.'}</p>
+      <p className="text-xs text-muted-foreground">
+        {board ? hint(board, lighting.choice) : 'Connect the board: its lighting is read first, then you can change it.'}
+      </p>
 
       <div className="flex flex-col items-start gap-2">
-        <SendButton dryRun={session.dryRun} disabled={!ready || !board} onClick={() => void onSend()} />
+        <SendButton dryRun={session.dryRun} disabled={!session.canSend || !board} onClick={() => void onSend()} />
         {status && <p className="text-xs leading-relaxed">{status}</p>}
       </div>
     </Pane>

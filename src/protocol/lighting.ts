@@ -1,16 +1,16 @@
 /**
  * Planning a lighting change as read-modify-write over the regions the board
- * just returned. Pure functions only: the plan lists the regions to write, in
- * the order AULA's driver writes them (per-key colours, colour table, then
- * settings page [DRV]), and every byte that changes.
+ * just returned, and reading back what the board shows. Pure functions only:
+ * a plan lists the regions to write, in the order AULA's driver writes them
+ * (per-key colours, colour table, then settings page [DRV]), and every byte
+ * that changes.
  */
-import { assertRgb, sameBytes, type Rgb } from '@/protocol/bytes'
-import { COLOR_NAMES, FIRMWARE_COLORS, colorRow, rowMatchesLayout, withSlotZero } from '@/protocol/color-table'
-import { MAX_BRIGHTNESS, MAX_SPEED, PER_KEY, effectByValue, type Effect } from '@/protocol/effects'
+import { assertRgb, formatHexColor, sameBytes, type Rgb } from '@/protocol/bytes'
+import { COLOR_NAMES, FIRMWARE_COLORS, trustedRow, withSlotZero } from '@/protocol/color-table'
+import { MAX_BRIGHTNESS, MAX_SPEED, PER_KEY, effectByValue, findEffect, type Effect } from '@/protocol/effects'
 import { PER_KEY_LENGTH, encodePerKey, type KeyColors } from '@/protocol/per-key'
+import { REGIONS, type Region } from '@/protocol/regions'
 import { COLORFUL, PER_KEY_GROUP_0, SettingsOffset, assertSettingsPage, readSlot, writeSlot } from '@/protocol/settings'
-
-export type Region = 'settings' | 'colour table' | 'per-key colours'
 
 export interface Change {
   region: Region
@@ -33,13 +33,17 @@ export interface RegionWrite {
  */
 export type ColorPath = 'firmware' | 'custom' | 'colorful' | 'own'
 
-/** What the user asked for. Controls an effect does not have are ignored; a missing one keeps the board's value. */
+/**
+ * What the user asked for, as the controls hold it. Controls the effect
+ * doesn't have are ignored, and a missing brightness, speed or colour keeps
+ * the board's value; colorSetting says how the colour applies.
+ */
 export interface LightingChoice {
   effect: Effect
   brightness?: number
   speed?: number
-  /** A colour or 'colorful' for an effect with a colour; 'colorful' or 'own' for a colourful-only one. */
-  color: Rgb | 'colorful' | 'own'
+  colorful?: boolean
+  color?: Rgb
 }
 
 export interface LightingPlan {
@@ -50,6 +54,18 @@ export interface LightingPlan {
   colorPath: ColorPath | null
   /** The colour nibble written, when colorPath is set. */
   colorIndex: number | null
+}
+
+/**
+ * The one rule for how a choice's colour applies to its effect: null when the
+ * effect has no colour control, 'colorful' only if the effect can be, 'own'
+ * for a colourful-only effect that isn't, else the colour (if one was given).
+ */
+export function colorSetting({ effect, colorful, color }: LightingChoice): Rgb | 'colorful' | 'own' | null {
+  if (!effect.color && !effect.colorful) return null
+  if (colorful && effect.colorful) return 'colorful'
+  if (!effect.color) return 'own'
+  return color ?? null
 }
 
 function diff(region: Region, before: Uint8Array, after: Uint8Array): Change[] {
@@ -82,14 +98,14 @@ interface ColorPick {
  */
 function pickColor(effect: Effect, currentNibble: number, table: Uint8Array | null, rgb: Rgb): ColorPick {
   assertRgb(rgb)
-  const layoutOk = table !== null && rowMatchesLayout(table, effect.value)
-  const row = layoutOk ? colorRow(table, effect.value) : FIRMWARE_COLORS
+  const trusted = trustedRow(table, effect.value)
+  const row = trusted ?? FIRMWARE_COLORS
   // Keep the selected slot if it already holds this colour (a row can hold a colour twice).
   const keep = currentNibble < row.length && sameBytes(row[currentNibble], rgb)
   const found = keep ? currentNibble : row.findIndex((c) => sameBytes(c, rgb))
   if (found >= 0) return { path: 'firmware', nibble: found, table: null }
 
-  if (!layoutOk) {
+  if (!trusted || !table) {
     throw new Error(
       "Custom colours need the board's colour table in the expected layout, and this one differs. " +
         `Only the 7 firmware colours (${COLOR_NAMES.join(', ')}) are available; a backup of the table would help pin it down.`,
@@ -99,13 +115,12 @@ function pickColor(effect: Effect, currentNibble: number, table: Uint8Array | nu
 }
 
 /** The colour nibble (and colour-table patch) for the choice, or null to leave the nibble as the board has it. */
-function chooseColor(effect: Effect, currentNibble: number, table: Uint8Array | null, color: LightingChoice['color']): ColorPick | null {
-  // Rainbow, per-key and off have no colour control.
-  if (!effect.color && !effect.colorful) return null
-  if (color === 'colorful') return effect.colorful ? { path: 'colorful', nibble: COLORFUL, table: null } : null
-  // A colourful-only effect that isn't colourful shows its own colours: the driver's "random off".
-  if (!effect.color) return { path: 'own', nibble: 0, table: null }
-  return color === 'own' ? null : pickColor(effect, currentNibble, table, color)
+function chooseColor(choice: LightingChoice, currentNibble: number, table: Uint8Array | null): ColorPick | null {
+  const setting = colorSetting(choice)
+  if (setting === null) return null
+  if (setting === 'colorful') return { path: 'colorful', nibble: COLORFUL, table: null }
+  if (setting === 'own') return { path: 'own', nibble: 0, table: null }
+  return pickColor(choice.effect, currentNibble, table, setting)
 }
 
 /**
@@ -128,7 +143,7 @@ export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null
     const slot = readSlot(settings, effect)
     if (effect.brightness && choice.brightness !== undefined) slot.brightness = inRange(choice.brightness, MAX_BRIGHTNESS, 'Brightness')
     if (effect.speed && choice.speed !== undefined) slot.speed = inRange(choice.speed, MAX_SPEED, 'Speed')
-    pick = chooseColor(effect, slot.color, colorTable, choice.color)
+    pick = chooseColor(choice, slot.color, colorTable)
     if (pick) slot.color = pick.nibble
     writeSlot(next, effect, slot)
     if (effect.brightness && slot.brightness === 0) warnings.push(`${effect.name} brightness is 0, so the keys will stay dark.`)
@@ -137,8 +152,8 @@ export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null
   const writes: RegionWrite[] = []
   const changes: Change[] = []
   if (pick?.table && colorTable) {
-    writes.push({ region: 'colour table', bytes: pick.table })
-    changes.push(...diff('colour table', colorTable, pick.table))
+    writes.push({ region: 'colorTable', bytes: pick.table })
+    changes.push(...diff('colorTable', colorTable, pick.table))
   }
   writes.push({ region: 'settings', bytes: next })
   changes.push(...diff('settings', settings, next))
@@ -153,12 +168,41 @@ export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null
  */
 export function planPerKey(settings: Uint8Array, before: Uint8Array | null, colors: KeyColors): LightingPlan {
   const bytes = encodePerKey(colors)
-  const select = planLighting(settings, null, { effect: effectByValue(PER_KEY), color: 'own' })
+  const select = planLighting(settings, null, { effect: effectByValue(PER_KEY) })
   return {
     ...select,
-    writes: [{ region: 'per-key colours', bytes }, ...select.writes],
-    changes: [...diff('per-key colours', before ?? new Uint8Array(PER_KEY_LENGTH), bytes), ...select.changes],
+    writes: [{ region: 'perKey', bytes }, ...select.writes],
+    changes: [...diff('perKey', before ?? new Uint8Array(PER_KEY_LENGTH), bytes), ...select.changes],
   }
+}
+
+// ── Describing a choice and a plan, for the log and the status line ──────
+
+/** "Fixed on in #00ff00", "Breathing, colourful", "Rainbow". */
+export function describeChoice(choice: LightingChoice): string {
+  const setting = colorSetting(choice)
+  if (setting === 'colorful') return `${choice.effect.name}, colourful`
+  if (setting === null || setting === 'own') return choice.effect.name
+  return `${choice.effect.name} in ${formatHexColor(setting)}`
+}
+
+/** The regions a plan writes: "settings page only", "colour table + settings page". */
+export function writtenRegions(plan: LightingPlan): string {
+  const labels = plan.writes.map((w) => REGIONS[w.region].label)
+  return labels.length === 1 ? `${labels[0]} only` : labels.join(' + ')
+}
+
+/** "firmware colour, settings page only", "custom colour, colour table + settings page", "per-key colours + settings page". */
+export function describeWrites(plan: LightingPlan): string {
+  const regions = writtenRegions(plan)
+  return plan.colorPath === 'custom' || plan.colorPath === 'firmware' ? `${plan.colorPath} colour, ${regions}` : regions
+}
+
+// ── Reading what the board shows ─────────────────────────────────────────
+
+/** The effect the settings page has live, or undefined for a value AULA's profile doesn't list. */
+export function liveEffect(settings: Uint8Array): Effect | undefined {
+  return findEffect(settings[SettingsOffset.effect])
 }
 
 /** What the board holds for one effect, as the controls show it. */
@@ -175,16 +219,11 @@ export function readEffectState(settings: Uint8Array, colorTable: Uint8Array | n
   assertSettingsPage(settings)
   if (effect.slot === null) return null
   const slot = readSlot(settings, effect)
-  const colorful = slot.color === COLORFUL
-  let color: Rgb | null = null
-  if (effect.color && slot.color < FIRMWARE_COLORS.length) {
-    const row = colorTable && rowMatchesLayout(colorTable, effect.value) ? colorRow(colorTable, effect.value) : FIRMWARE_COLORS
-    color = row[slot.color]
-  }
+  const color = effect.color && slot.color < FIRMWARE_COLORS.length ? (trustedRow(colorTable, effect.value) ?? FIRMWARE_COLORS)[slot.color] : null
   return {
     brightness: Math.min(slot.brightness, MAX_BRIGHTNESS),
     speed: Math.min(slot.speed, MAX_SPEED),
-    colorful,
+    colorful: slot.color === COLORFUL,
     color,
   }
 }

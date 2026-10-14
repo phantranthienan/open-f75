@@ -62,6 +62,11 @@ export function rowMatchesLayout(table: Uint8Array, row: number): boolean {
   return colorRow(table, row).every((rgb, slot) => slot === 0 || sameBytes(rgb, FIRMWARE_COLORS[slot]))
 }
 
+/** The row's colours when the row passes rowMatchesLayout, else null: only then are its slots trusted. */
+export function trustedRow(table: Uint8Array | null, row: number): Rgb[] | null {
+  return table && rowMatchesLayout(table, row) ? colorRow(table, row) : null
+}
+
 /** A copy of the table with `rgb` in slot 0 of `row`. */
 export function withSlotZero(table: Uint8Array, row: number, rgb: Rgb): Uint8Array {
   const next = Uint8Array.from(table)

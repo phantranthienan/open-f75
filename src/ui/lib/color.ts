@@ -27,5 +27,3 @@ export function rgbToHsv([r, g, b]: Rgb): Hsv {
   }
   return { h: (h * 60 + 360) % 360, s: max === 0 ? 0 : d / max, v: max }
 }
-
-export const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value)

@@ -18,6 +18,11 @@ export function toHex(bytes: ArrayLike<number>, separator = ' '): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(separator)
 }
 
+/** A #rrggbb colour, in either case. */
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+}
+
 export function parseHexColor(color: string): Rgb {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color.trim())
   if (!m) throw new Error(`not a #rrggbb colour: ${color}`)

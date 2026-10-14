@@ -1,5 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test'
-import { F75_COLOR_TABLE, F75_IDENTITY, F75_SETTINGS } from '@test/fixtures/f75'
+import { BOARD } from '@test/fixtures/f75'
 import { installFakeHid, type FakeBoard, type SentReport } from '@test/fixtures/fake-hid'
 
 /** Every test fails if the page logs an error or throws. */
@@ -18,20 +18,9 @@ export const test = base.extend<{ consoleErrors: string[] }>({
   ],
 })
 export { expect }
+export { BLANK_PER_KEY, BOARD } from '@test/fixtures/f75'
 
 export const F87_IDENTITY = [0x03, 0x00, 0x00, 0x00, 0x00, 0x8f]
-
-/** The owner's F75 as backed up: Fixed on, white (colour 6), brightness 7. No per-key colours stored. */
-export const BOARD: FakeBoard = {
-  identity: F75_IDENTITY,
-  settings: F75_SETTINGS,
-  colorTable: F75_COLOR_TABLE,
-  perKey: new Array(378).fill(0),
-  productId: 0x010c,
-  granted: false,
-  replyFormat: 'short-with-id', // what Chrome on macOS did with the real F75
-  ignoreWrites: false,
-}
 
 /** Opens the app with a fake F75 behind navigator.hid. */
 export async function openWithBoard(page: Page, board: Partial<FakeBoard> = {}) {
@@ -51,10 +40,17 @@ export async function connectF75(page: Page) {
   await expect(page.getByRole('button', { name: 'Read board' })).toBeEnabled()
 }
 
-/** The reads that load the board's lighting: settings page, colour table, per-key colours. */
-export const READ_LIGHTING = [0x84, 0x8a, 0x86]
-/** The commands connectF75 sends: identity, then the lighting reads. */
-export const CONNECT_COMMANDS = [0x82, ...READ_LIGHTING]
+/**
+ * The reads each operation starts with. Connecting, Read board and a backup
+ * read every region; an apply reads only the regions its plan can write.
+ */
+export const READ = {
+  board: [0x84, 0x8a, 0x86],
+  lighting: [0x84, 0x8a],
+  perKey: [0x84, 0x86],
+} as const
+/** The commands connectF75 sends: identity, then the board read. */
+export const CONNECT_COMMANDS = [0x82, ...READ.board]
 
 export async function selectEffect(page: Page, name: string) {
   await page.getByLabel('Effect').selectOption({ label: name })

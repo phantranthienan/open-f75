@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test'
 import {
+  BLANK_PER_KEY,
   BOARD,
   CONNECT_COMMANDS,
-  READ_LIGHTING,
+  READ,
   WRITE,
   boardState,
   changedOffsets,
@@ -53,7 +54,7 @@ test.describe('per-key colours', () => {
     await sendKeyColors(page)
     await expect(page.getByText('Saved the per-key effect with 5 key(s) lit (per-key colours + settings page) and read it back.')).toBeVisible()
     // The driver's order: colours, then the settings page; then both read back.
-    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING, WRITE.perKey, WRITE.settings, 0x86, 0x84])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ.perKey, WRITE.perKey, WRITE.settings, 0x86, 0x84])
 
     const colors = (await writtenPayload(page, WRITE.perKey, 378))!
     for (const led of [LED.Esc, LED.Q, LED.W, LED.E]) expect([colors[R + led], colors[G + led], colors[B + led]]).toEqual([255, 0, 0])
@@ -68,7 +69,7 @@ test.describe('per-key colours', () => {
   })
 
   test('starts from the colours stored on the board', async ({ page }) => {
-    const perKey = new Array(378).fill(0)
+    const perKey = [...BLANK_PER_KEY]
     perKey[G + LED.Esc] = 0xff
     await openWithBoard(page, { perKey })
     await connectF75(page)
@@ -112,7 +113,7 @@ test.describe('per-key colours', () => {
     await sendKeyColors(page)
 
     await expect(page.getByText(/^Dry run \(per-key colours \+ settings page\)/)).toBeVisible()
-    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ_LIGHTING])
+    expect(await commands(page)).toEqual([...CONNECT_COMMANDS, ...READ.perKey])
     expect((await boardState(page)).perKey).toEqual(BOARD.perKey)
   })
 
