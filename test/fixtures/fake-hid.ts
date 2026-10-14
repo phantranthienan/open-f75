@@ -14,6 +14,8 @@ export interface SentReport {
   reportId: number
   /** Without the report ID, as WebHID passes it. */
   data: number[]
+  /** When it arrived, in ms (performance.now()). */
+  at: number
 }
 
 /**
@@ -100,11 +102,11 @@ export function installFakeHid(board: FakeBoard): void {
       this.opened = false
     }
     async sendReport(reportId: number, data: BufferSource) {
-      sent.push({ type: 'output', reportId, data: bytesOf(data) })
+      sent.push({ type: 'output', reportId, data: bytesOf(data), at: performance.now() })
     }
     async sendFeatureReport(reportId: number, data: BufferSource) {
       const bytes = bytesOf(data)
-      sent.push({ type: 'feature', reportId, data: bytes })
+      sent.push({ type: 'feature', reportId, data: bytes, at: performance.now() })
       if (!this.opened || reportId !== 0x06 || bytes.length !== 519) throw new DOMException('Failed to write the feature report.', 'NotAllowedError')
       const header = [reportId, ...bytes.slice(0, 7)]
       const length = bytes[5] | (bytes[6] << 8)

@@ -29,9 +29,8 @@ export interface RegionWrite {
  *   firmware  the colour is already in the effect's row; the nibble selects it (settings page only)
  *   custom    the colour goes into slot 0 of the row and the nibble selects slot 0, as AULA's driver does
  *   colorful  nibble 7
- *   own       nibble 0 for an effect that has no colour of its own here (the driver's "random off")
  */
-export type ColorPath = 'firmware' | 'custom' | 'colorful' | 'own'
+export type ColorPath = 'firmware' | 'custom' | 'colorful'
 
 /**
  * What the user asked for, as the controls hold it. Controls the effect
@@ -57,15 +56,13 @@ export interface LightingPlan {
 }
 
 /**
- * The one rule for how a choice's colour applies to its effect: null when the
- * effect has no colour control, 'colorful' only if the effect can be, 'own'
- * for a colourful-only effect that isn't, else the colour (if one was given).
+ * The one rule for how a choice's colour applies to its effect: 'colorful'
+ * only if the effect can be, else the colour (if one was given) for an effect
+ * with a colour control, else null.
  */
-export function colorSetting({ effect, colorful, color }: LightingChoice): Rgb | 'colorful' | 'own' | null {
-  if (!effect.color && !effect.colorful) return null
+export function colorSetting({ effect, colorful, color }: LightingChoice): Rgb | 'colorful' | null {
   if (colorful && effect.colorful) return 'colorful'
-  if (!effect.color) return 'own'
-  return color ?? null
+  return effect.color ? (color ?? null) : null
 }
 
 function diff(region: Region, before: Uint8Array, after: Uint8Array): Change[] {
@@ -119,7 +116,6 @@ function chooseColor(choice: LightingChoice, currentNibble: number, table: Uint8
   const setting = colorSetting(choice)
   if (setting === null) return null
   if (setting === 'colorful') return { path: 'colorful', nibble: COLORFUL, table: null }
-  if (setting === 'own') return { path: 'own', nibble: 0, table: null }
   return pickColor(choice.effect, currentNibble, table, setting)
 }
 
@@ -132,6 +128,9 @@ function chooseColor(choice: LightingChoice, currentNibble: number, table: Uint8
 export function planLighting(settings: Uint8Array, colorTable: Uint8Array | null, choice: LightingChoice): LightingPlan {
   assertSettingsPage(settings)
   const { effect } = choice
+  if (!effect.supported) {
+    throw new Error(`AULA's driver doesn't offer ${effect.name} on the F75 (its LedMask hides it), so this app doesn't write it.`)
+  }
   const next = Uint8Array.from(settings)
   next[SettingsOffset.effect] = effect.value
   next[SettingsOffset.perKeyMode] = effect.value === PER_KEY ? 1 : 0
@@ -182,7 +181,7 @@ export function planPerKey(settings: Uint8Array, before: Uint8Array | null, colo
 export function describeChoice(choice: LightingChoice): string {
   const setting = colorSetting(choice)
   if (setting === 'colorful') return `${choice.effect.name}, colourful`
-  if (setting === null || setting === 'own') return choice.effect.name
+  if (setting === null) return choice.effect.name
   return `${choice.effect.name} in ${formatHexColor(setting)}`
 }
 

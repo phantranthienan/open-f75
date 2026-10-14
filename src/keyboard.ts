@@ -91,6 +91,22 @@ export class BusyError extends Error {
 }
 
 const RETRY_DELAY_MS = 70
+
+/**
+ * The pauses AULA's driver makes around a lighting change (ApplySetting,
+ * FUN_0049c020), on top of the 20 ms before every transfer. WaitTm is 30 ms;
+ * the F75's profile doesn't change it. With only the 20 ms, the owner's F75
+ * sometimes went dark after a change that read back correctly.
+ */
+const WAIT_BEFORE_WRITE_MS: Record<Region, number> = {
+  colorTable: 120, // Sleep(0x78) before SetLedRgbTab
+  perKey: 30, // Sleep(WaitTm) before each colour group
+  settings: 60, // Sleep(0x3c) before the settings page...
+}
+/** ...or, after another region: Sleep(WaitTm), a settings read, then Sleep(0x3c + 0x28). */
+const WAIT_BEFORE_SETTINGS_AFTER_OTHER_MS = 30 + 100
+/** After the last write: the driver leaves the board alone for 500 ms. */
+const WAIT_BEFORE_READ_BACK_MS = 500
 /** A region with more changed bytes than this logs one summary line instead of one per byte. */
 const CHANGES_LISTED = 12
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -265,11 +281,16 @@ export class Keyboard {
     this.logChanges(plan)
 
     let result: SendResult = 'sent'
-    for (const w of plan.writes) result = await this.write(REGIONS[w.region].write, w.bytes)
+    for (const [i, w] of plan.writes.entries()) {
+      const afterOther = i > 0 && w.region === 'settings'
+      await sleep(afterOther ? WAIT_BEFORE_SETTINGS_AFTER_OTHER_MS : WAIT_BEFORE_WRITE_MS[w.region])
+      result = await this.write(REGIONS[w.region].write, w.bytes)
+    }
     if (result === 'dry-run') {
       this.log.add('info', `Dry run: ${plan.writes.length} write(s) logged, none sent`)
       return { result, plan, board: this.remember(before) }
     }
+    await sleep(WAIT_BEFORE_READ_BACK_MS)
     const after = await this.verify(plan)
     this.log.add('info', 'Done: written and read back')
     return { result, plan, board: this.remember({ ...before, ...after }) }

@@ -85,8 +85,6 @@ function planHint(plan: LightingPlan, effect: Effect): string {
       return `custom colour into slot 0 of the effect's colour-table row · ${describeWrites(plan)}`
     case 'colorful':
       return `colourful · the effect picks its colours itself · ${describeWrites(plan)}`
-    case 'own':
-      return `${effect.name} uses its own colours here (AULA's driver sets none for it)`
     default:
       if (effect.value === OFF) return 'off · writes the effect byte only'
       return `${effect.name} has no colour setting`

@@ -12,6 +12,7 @@ import {
   pickColor,
   selectEffect,
   sendColor,
+  sent,
   setDryRun,
   test,
   writtenPayload,
@@ -88,16 +89,35 @@ test.describe('lighting', () => {
     expect(settings[0x3f]).toBe(0x17) // speed 1, the board's colour nibble kept
   })
 
-  test('a colourful-only effect switched off uses its own colours, as AULA\'s driver writes it', async ({ page }) => {
-    await live(page)
-    await selectEffect(page, 'Shadow disappear') // value 9, slot 8 at 0x4a..0x4b; no colour row in AULA's driver
-    await page.getByRole('switch', { name: 'Colourful' }).click()
-    await sendColor(page)
+  test("the effects AULA's driver hides on the F75 are not offered", async ({ page }) => {
+    // LedMask 0x22100 hides effects 9, 14 and 18; written anyway, they can leave the keys dark.
+    const onShadow = [...BOARD.settings]
+    onShadow[0x0a] = 9
+    await live(page, { settings: onShadow })
 
-    await expect(page.getByText('Saved Shadow disappear (settings page only)')).toBeVisible()
-    const settings = (await writtenPayload(page, WRITE.settings, 128))!
-    expect(changedOffsets(BOARD.settings, settings)).toEqual([0x0a, 0x4b])
-    expect(settings[0x4b]).toBe(0x40)
+    for (const name of ['Shadow disappear', 'Retinue scanning', 'Rotating storm']) {
+      await expect(page.getByLabel('Effect').getByRole('option', { name })).toHaveCount(0)
+    }
+    await expect(page.getByLabel('Effect').getByRole('option')).toHaveCount(16) // 15 effects and off
+    await expect(page.getByText('board: Shadow disappear')).toBeVisible()
+    await expect(page.getByLabel('Effect')).toHaveValue('1') // the pane edits Fixed on instead
+  })
+
+  test("a change is paced like AULA's driver, and read back only after the board has had time", async ({ page }) => {
+    await live(page)
+    await selectEffect(page, 'Breathing')
+    await page.getByRole('switch', { name: 'Colourful' }).click()
+    await pickColor(page, '#123456') // custom: colour table, then settings page
+    await sendColor(page)
+    await expect(page.getByText('Saved Breathing in #123456')).toBeVisible()
+
+    // The reports after connecting: the reads, the two writes, then the read-back.
+    const reports = (await sent(page)).slice(CONNECT_COMMANDS.length)
+    expect(reports.map((r) => r.data[0])).toEqual([...READ.lighting, WRITE.colorTable, WRITE.settings, 0x8a, 0x84])
+    const [, lastRead, tableWrite, settingsWrite, readBack] = reports.map((r) => r.at)
+    expect(tableWrite - lastRead).toBeGreaterThanOrEqual(120)
+    expect(settingsWrite - tableWrite).toBeGreaterThanOrEqual(130)
+    expect(readBack - settingsWrite).toBeGreaterThanOrEqual(500)
   })
 
   test('off writes the effect byte only', async ({ page }) => {

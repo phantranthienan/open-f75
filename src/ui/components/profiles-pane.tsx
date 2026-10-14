@@ -21,7 +21,7 @@ function summary(p: Profile): string {
   if (effect.brightness) parts.push(`${p.brightness}/${MAX_BRIGHTNESS}`)
   const color = colorSetting({ effect, colorful: p.colorful, color: parseHexColor(p.color) })
   if (color === 'colorful') parts.push('colourful')
-  else if (color !== null && color !== 'own') parts.push(formatHexColor(color))
+  else if (color !== null) parts.push(formatHexColor(color))
   const keys = Object.keys(p.keys).length
   if (keys) parts.push(`${keys} key${keys === 1 ? '' : 's'}`)
   return parts.join(' · ')

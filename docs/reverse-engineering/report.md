@@ -41,6 +41,7 @@ Addresses are the driver's (`FUN_00499af0` is the function at `0x00499af0` in `O
 | Identity | `06 82 01 00 01 00 06 00`. The 6-byte answer must equal the profile's `Psd=` byte for byte (`03 00 00 00 00 cd` for the F75), or the driver ignores the device. The firmware version comes from USB (`bcdDevice`), not from a command. | confirmed |
 | Byte `0x0a`: UI index or hardware number? | The **first** number of the effect's `LedOptN=` line, which the profile's own comment calls `hw`. For the F75 that is 1–18 in list order, 21 for per-key ("Self-define") and 0 for off. The second number only picks the driver's on-screen preview. | confirmed |
 | Per-effect slots | One 2-byte slot per effect from `0x3a`, **in list order**: effects 1–18 at slot `effect − 1`, per-key at slot 18 (`0x5e`). Brightness = `LightHW`, speed = `SpeedHW << 4`, colour nibble = 0, or 7 for random. | confirmed |
+| Which effects the F75 has | 15 effects, per-key and off. `LedMask=0x22100` hides effects 9, 14 and 18: the driver leaves them out of its effect list (`FUN_004305d0`) and out of the colour table. | confirmed |
 | `0x8a`/`0x0a` | A colour table, as the app assumed: one row of 7 RGB colours per effect, row = the effect's `0x0a` value, `5A A5` at 506. The driver calls it `SetLedRgbTab`. It is not per-key colour (AulaSofwareLinux's reading). | confirmed |
 | Fixed on in a custom colour | The colour goes into row 1, slot 0, and the settings page selects slot 0, which is what the app's custom path does. | confirmed |
 | Full command list | See [§6](#6-every-command). `0x06`/`0x86`, which the driver logs as "SetGame", carries the per-key colours. | confirmed |
@@ -107,7 +108,10 @@ AULA's binaries stay out of this repository. The hashes identify them.
 2. key matrix (`0x03`, one frame per layer, 50 ms apart) and macros (`0x05`)
 3. per-key colour groups (`0x06`), when the per-key effect is live
 4. colour table (`0x0a`), 120 ms after the last write
-5. settings page: read (`0x84`, retried up to 5 times, 100 ms apart, until it ends in `5A A5`), patch, write (`0x04`) 60 ms (or 100 ms) later
+5. settings page: `WaitTm` (default 30 ms; the F75 profile doesn't set it), then read (`0x84`, retried up to 5 times, 100 ms apart, until it ends in `5A A5`), patch, write (`0x04`) 60 ms (or 100 ms after a colour-table write) later
+6. then 500 ms (30 ms without a window) before the driver talks to the board again
+
+The per-key colour groups (step 3) each wait `WaitTm` first. The app keeps these pauses ([§17](#17-checked-against-the-app)). *confirmed*
 
 Only the settings page is read-modify-write. The colour table, matrix and macros are written whole from the driver's own state. *confirmed*
 
@@ -220,7 +224,7 @@ So the firmware's own default for the animated effects is brightness 9, colourfu
 
 Read with `0x8a` (GetLedRgbTab), written with `0x0a` (SetLedRgbTab). Built in `ApplySetting` (`FUN_0049c020`) when the colour flag `0x40` is set and the per-key effect isn't live. *confirmed*
 
-- For each of the 19 effect options not masked by `LedMask` (F75: `0x22100`, which masks options 9, 14 and 18):
+- For each of the 19 effect options not masked by `LedMask` (F75: `0x22100`, which masks options 9, 14 and 18; bit `n` masks list position `n`):
   - `row = ` the option's first `LedOpt` number (its `0x0a` value)
   - 7 colours from the option's colour list go to `row × 21 + slot × 3`, each as R, G, B in `RGBIndex` order (F75: `0,1,2`)
 - The default colour list is red, green, blue, yellow, magenta, cyan, white. A `LedOptN` line can override it with colour triples after its seventh number (the F75's lines don't).
@@ -279,6 +283,8 @@ The names come from `text.xml` `tc_kb_ledN`, loaded by position (`FUN_0042edc0`)
 **Sleep**: `SleepUI=60,90,120,180,240,300,600,900,1200` seconds maps to `SleepHW=2,3,4,6,8,10,20,30,40`, so one unit is 30 s.
 
 No F75 effect offers a direction.
+
+**Masked effects.** `LedMask` is read twice, into the device (`FUN_00411830`) and into the UI (`FUN_0040fd80`). The effect list (`FUN_004305d0`) calls `CTreeCtrl::InsertItem` for an effect only when its bit is clear, and the colour-table build skips masked rows. So on an F75 the driver never offers Shadow disappear (9), Retinue scanning (14) or Rotating storm (18). The first version of this report read the mask as "no colour-table row, colourful only"; the app then offered them, and selecting them could leave the keys dark. It no longer does. *confirmed*
 
 To select an effect, the driver writes its value to `0x0a`, sets `0x09` (1 only for per-key), and rewrites all 19 slots from its state ([§7](#7-settings-page-128-bytes)). *confirmed*
 
@@ -442,6 +448,8 @@ The driver can't brick an F75 by itself. A firmware update needs AULA to ship an
 | setting Fixed on leaves `0x09` alone | the driver writes `0x09 = 0` for every effect but per-key | **fixed**: the colour plan (now `planLighting`) clears `0x09`; new test "leaving the per-key effect clears its flag, as AULA's driver does" (`test/static-color`). It fails without the fix |
 | colour table: rows of 7, row 1 = Fixed on, custom colour in slot 0, `5A A5` at 506 | §8 | matches; comments no longer call it unconfirmed |
 | allowlist: five commands, everything else refused | §6, §16 | matches; the safety test now also sends the driver's reset frame and the per-key, streaming, screen and battery commands |
+| app offered effects 9, 14 and 18 (as colourful only) | `LedMask` hides them on the F75 (§9) | **fixed**: `supported` is false for them in `effects.ts`; the lighting pane doesn't list them and `planLighting` refuses them. Test "the effects AULA's driver hides on the F75 are not offered" (`test/lighting`) |
+| writes 20 ms apart, read back 20 ms after the last write | waits 120 ms before the colour table, 30 ms before per-key colours, 60 or 130 ms before the settings page, then 500 ms (§4) | **fixed**: `keyboard.ts` waits the same, and reads back after 500 ms. The owner's F75 sometimes went dark after a change that read back correctly. Test "a change is paced like AULA's driver" (`test/lighting`) |
 
 Source tag for the code comments: `[DRV]`, this binary.
 

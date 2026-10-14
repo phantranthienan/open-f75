@@ -6,7 +6,7 @@ What it does today:
 
 - connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
 - reads the board's lighting, so the controls start from what the board shows
-- sets any of the 18 built-in effects (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
+- sets any of the 15 built-in effects AULA offers on the F75 (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
 - paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect
 - saves what the lighting and keys panes hold as named profiles in the browser, with JSON export and import
 - backs up the board's settings page, colour table and per-key colours as JSON
@@ -168,7 +168,7 @@ Over the cable the board takes 520-byte HID feature reports with report ID `0x06
 
 Platforms hand the reply over differently. Chrome on macOS returned 14 bytes for the identity reply on a real F75 (report ID, 7 header bytes and 6 data bytes, no padding). `parseReply` therefore accepts the reply with or without the report ID, padded or not. It refuses one that doesn't start with the command it asked for.
 
-AULA's driver waits 20 ms before every transfer and tries a failed one 3 times, 70 ms apart. The app does the same. The decompiled driver builds exactly this frame ([report](docs/reverse-engineering/report.md#5-the-frame)).
+AULA's driver waits 20 ms before every transfer and tries a failed one 3 times, 70 ms apart. Around a lighting change it waits longer: 120 ms before the colour table, 30 ms before per-key colours, 60 ms before the settings page (130 ms after another write), then leaves the board alone for 500 ms. The app does the same, and reads the change back only after those 500 ms; with 20 ms gaps the owner's F75 sometimes went dark after a change that read back correctly. The decompiled driver builds exactly this frame ([report](docs/reverse-engineering/report.md#5-the-frame)).
 
 ### Commands
 
@@ -216,11 +216,11 @@ So Fixed on is the slot at `0x3a`: brightness at `0x3a`, and speed (high nibble)
 | 1 | Fixed on | 0 | ✓ | – | ✓ | ✓ |
 | 2, 4–8, 10–13 | Breathing, Flash away, Raindrops, Rainbow wheel, Ripples shining, Stars twinkle, Retro snake, Neon stream, Reaction, Sine wave | value − 1 | ✓ | ✓ | ✓ | ✓ |
 | 3, 15, 16, 17 | Rainbow, Rotating windmill, Colorful waterfall, Blossoming | value − 1 | ✓ | ✓ | – | – |
-| 9, 14, 18 | Shadow disappear, Retinue scanning, Rotating storm | value − 1 | ✓ | ✓ | – | ✓ |
+| 9, 14, 18 | Shadow disappear, Retinue scanning, Rotating storm: **not offered** | value − 1 | | | | |
 | 21 | Per-key | 18 | – | – | – | – |
 | 0 | Off | – | – | – | – | – |
 
-Brightness runs 0–9 and speed 0–4. AULA's driver writes no colour-table row for effects 9, 14 and 18 (its profile masks them), so they offer only colourful, or their own colours. The [report](docs/reverse-engineering/report.md#9-effects) has the evidence.
+Brightness runs 0–9 and speed 0–4. AULA's F75 profile masks effects 9, 14 and 18 (`LedMask=0x22100`), and its driver then leaves them out of its effect list, writes no colour-table row for them and never selects them. Selected anyway, they can leave the keys dark, so the app doesn't offer or write them either. The [report](docs/reverse-engineering/report.md#9-effects) has the evidence.
 
 ### Colour table (512 bytes)
 
@@ -261,7 +261,7 @@ The only real risk to a keyboard is firmware. Everything here is meant to make t
 Read in this order. Each step builds on the one before. The line counts are rough.
 
 1. **`src/protocol/wired.ts`** (~140 lines): the frame. Start with the comment at the top, which has the byte layout and its sources. Then read `buildReadRequest`, `buildWrite` and `parseReply`, whose comment explains why short replies are accepted.
-2. **`src/protocol/effects.ts`**, **`settings.ts`**, **`color-table.ts`**, **`per-key.ts`** (~45–90 each): what the board stores. `effects.ts` lists the 20 effects and their controls; the top comments of the others map the settings page, the colour table and the per-key colours. **`regions.ts`** (~45) names the three regions once: how each is read and written, and its length. Then **`lighting.ts`** (~230): `colorSetting`, the one rule for how a colour applies to an effect, and `planLighting` and `planPerKey`, the whole lighting decision as pure functions.
+2. **`src/protocol/effects.ts`**, **`settings.ts`**, **`color-table.ts`**, **`per-key.ts`** (~45–90 each): what the board stores. `effects.ts` lists the 20 effects, their controls and the three AULA hides on the F75; the top comments of the others map the settings page, the colour table and the per-key colours. **`regions.ts`** (~45) names the three regions once: how each is read and written, and its length. Then **`lighting.ts`** (~230): `colorSetting`, the one rule for how a colour applies to an effect, and `planLighting` and `planPerKey`, the whole lighting decision as pure functions.
 3. **`src/protocol/ids.ts`** (~45): why the USB IDs aren't enough, and the identity bytes of each model.
 4. **`src/allowlist.ts`** (~125): `RULES` and `inspect()`, exactly what may be sent and why a frame is refused.
 5. **`src/safe-send.ts`** (~45): the guard. It's short; read all of it.
@@ -298,7 +298,7 @@ src/
   index.css                Tailwind, the three themes (CSS variables), base styles
   protocol/                pure functions, no I/O
     wired.ts               0x06 framing: build requests and writes, parse replies
-    effects.ts             the 20 effects: 0x0a value, settings slot, which controls each takes
+    effects.ts             the 20 effects: 0x0a value, settings slot, controls, and which AULA hides
     settings.ts            the settings page: offsets, the end marker, reading and writing a slot
     color-table.ts         the colour table: rows of 7 colours, the layout check
     regions.ts             the three regions: read and write commands, length, how the log names them

@@ -8,14 +8,14 @@ import { liveEffect, readEffectState, type LightingChoice } from '@/protocol/lig
 const DEFAULT_SPEED = 2
 
 /**
- * The effects the lighting pane offers: every effect but per-key. The board
- * shows one effect at a time, and per-key belongs to the keys pane, whose Send
- * writes the key colours and makes it live; the lighting pane's Send makes a
- * whole-board effect live again.
+ * The effects the lighting pane offers: every effect AULA offers on the F75
+ * but per-key. The board shows one effect at a time, and per-key belongs to
+ * the keys pane, whose Send writes the key colours and makes it live; the
+ * lighting pane's Send makes a whole-board effect live again.
  */
-export const LIGHTING_EFFECTS = EFFECTS.filter((e) => e.value !== PER_KEY)
+export const LIGHTING_EFFECTS = EFFECTS.filter((e) => e.supported && e.value !== PER_KEY)
 
-/** The lighting pane's effect for a 0x0a value: Fixed on for per-key and for a value it doesn't offer. */
+/** The lighting pane's effect for a 0x0a value: Fixed on for per-key and for any value it doesn't offer. */
 function lightingEffect(value: number | undefined): Effect {
   return LIGHTING_EFFECTS.find((e) => e.value === value) ?? LIGHTING_EFFECTS.find((e) => e.value === FIXED_ON)!
 }
@@ -53,7 +53,7 @@ export function useLighting(board: BoardState | null) {
   if (board !== loaded) {
     setLoaded(board)
     const live = board && liveEffect(board.settings)
-    if (live && live.value !== PER_KEY) load(lightingEffect(live.value), board, true)
+    if (live && LIGHTING_EFFECTS.includes(live)) load(live, board, true)
     else if (board) load(effect, board, false)
   }
 
