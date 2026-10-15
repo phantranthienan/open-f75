@@ -366,7 +366,7 @@ CLAUDE.md                  working rules for AI assistants in this repo
 
 One screen, laid out like a terminal dashboard:
 
-- **Top bar:** the name, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
+- **Top bar:** the name and a **source** link to this repository on GitHub, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
 - **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). Then the **Effect** list (every whole-board effect; per-key belongs to the keys pane), **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. Below that the wheel, a swatch, the hex field and its RGB value, and your saved colours. Pinned at the bottom, a line saying what Send will write, and **Dry run** or **Send to keyboard** with what it did. That button is amber while dry run is on. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour. While the board shows your key colours, the pane stays on its own effect, and Send switches the board back to it.
 - **backup:** **Back up config**. It only reads.
