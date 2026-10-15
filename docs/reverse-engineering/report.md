@@ -32,6 +32,7 @@ Addresses are the driver's (`FUN_00499af0` is the function at `0x00499af0` in `O
 18. [What each next feature needs](#18-what-each-next-feature-needs)
 19. [Open questions](#19-open-questions)
 20. [Function index](#20-function-index)
+21. [Effect previews](#21-effect-previews)
 
 ## 1. Answers in short
 
@@ -571,3 +572,37 @@ Every feature below needs new allowlist rules. Each rule must name its exact com
 | `0049c020` | `CDevG5KB::ApplySetting` |
 | `0049cc30` | `AccessData_Page` (`0x0c`) |
 | `0049cfd0` | SetGIFParam (`0x0d`) |
+
+## 21. Effect previews
+
+AULA's driver animates an on-screen preview of the selected effect. The app ports it, effect by effect, to play on the key map (`src/ui/lib/animations/`). Each effect's spec, with decomp.c line numbers and addresses, is in [previews/](previews/); [helpers.md](previews/helpers.md) covers the shared helpers and [reactive-input.md](previews/reactive-input.md) how presses reach the preview. *Confirmed* from the decompilation and, where Ghidra lost arguments, from `objdump` of OemDrv.exe (never run).
+
+**How it works.** The dispatcher `FUN_00431ca0` reads the selected effect's preview number (the second number of its `LedOpt` line) and calls one generator per number. The generator fills a descriptor: size, animation type, timer period in ms, then the type's fields. `FUN_0041ba70` arms a timer at that period, and `FUN_0041bbb0` advances the animation one tick per timer firing, branching on the type.
+
+| Effect | Preview | Generator | Type | Period | What it shows |
+| --- | --- | --- | --- | --- | --- |
+| Fixed on | 1 | `FUN_00485000` | 1 | 300 ms | still; colourful paints `fixon_unit.txt`'s gradient |
+| Breathing | 3 | `FUN_004850e0` | 3 | 50 ms | every key's alpha 180 → 5 → 180 in steps of 6 |
+| Rainbow | 2 | `FUN_004851e0` | 2 | 70 ms | the whole board cycles five colours |
+| Flash away | 19 | `FUN_00488820` | 0x13 | 30 ms | a press sends a flash both ways along its row |
+| Raindrops | 15 | `FUN_00486b80` | 0xf | 40 ms | drops run down 23 built-in columns |
+| Rainbow wheel | 13 | `FUN_0048a5f0` | 0xd | 60 ms | 19 wedges of `wheel_unit.txt` turn |
+| Ripples shining | 20 | `FUN_00485860` | 0x14 | 15 ms | a diamond ring grows from the pressed key |
+| Stars twinkle | 16 | `FUN_00487f00` | 0x10 | 80 ms | seven random keys light each tick and fade |
+| Retro snake | 5 | `FUN_00485350` | 5 | 10 ms | a 25-key snake winds through the rows |
+| Neon stream | 7 | `FUN_00485ec0` | 7 | 60 ms | 20 columns stream colours left to right |
+| Reaction | 17 | `FUN_00485720` | 0x11 | 50 ms | a pressed key lights and fades in five ticks |
+| Sine wave | 12 | `FUN_00488750` | 0xc | 30 ms | a sine curve travels across the board |
+| Rotating windmill | 28 | `FUN_00487140` | 0x1c | 60 ms | four blades turn round the board |
+| Colorful waterfall | 30 | `FUN_00486440` | 0x1e | 200 ms | colour bands pour down the six rows |
+| Blossoming | 14 | `FUN_00486620` | 0xe | 60 ms | rings of colour open outward from O |
+
+Findings that hold for all of them:
+
+- **Speed is ignored.** Every period is a constant of its generator. The app takes the driver's period as speed 2 and scales it by √2 a step, speed 4 fastest.
+- **Six effects share one engine,** a palette cycle (`FUN_00484e00`, `FUN_00484ef0`): units of keys loop through a palette, holding each colour and fading to the next, from staggered starting points. Its fade (`FUN_0040e4d0`) truncates: the FPU is put in chop mode.
+- **Most unit files are missing.** Only `breath_unit.txt`, `fixon_unit.txt` and `wheel_unit.txt` ship in the F75 package. For the others the generators fall back to built-in layouts (Raindrops, Retro snake, Neon stream, Blossoming, Rotating windmill), drawn for a full-size board.
+- **Keys are matched by code.** Unit files and built-in layouts name keys by virtual-key code, looked up in the French profile, so the US board's Fn (LED 53) and right Ctrl (LED 59) take the codes of the keys in those positions there (RAlt and Fn), and `\` (LED 80) takes the backslash code.
+- **Alpha.** The preview paints each key as a fill of some alpha over the dark key picture; on the F75 (`KbDrawType=0`) a key that is simply on gets 200, so the app shows 200 as full strength.
+- **Reactive previews are off.** AULA's `Cfg.ini` sets `ReactionEffect=0`, so its own preview of Reaction, Flash away and Ripples shining never reacts and stays dark. The app feeds them key presses from the page, and presses random keys after 2 s without one (not from the driver).
+

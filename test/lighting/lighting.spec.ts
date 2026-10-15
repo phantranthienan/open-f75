@@ -136,7 +136,7 @@ test.describe('lighting', () => {
     await expect(page.getByRole('button', { name: /^Esc: / })).toHaveCount(0)
 
     await selectEffect(page, 'Breathing')
-    await expect(page.getByText(/^preview of Breathing.*, which moves on the board$/)).toBeVisible()
+    await expect(page.getByText(/^preview of Breathing.*, as AULA's app animates it$/)).toBeVisible()
   })
 
   test('off writes the effect byte only', async ({ page }) => {

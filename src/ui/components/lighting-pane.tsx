@@ -19,6 +19,7 @@ import type { KeyColors } from '@/protocol/per-key'
 import { SettingsOffset } from '@/protocol/settings'
 import { ColorPicker } from '@/ui/components/color-picker'
 import { EffectControls } from '@/ui/components/effect-controls'
+import { EffectPreview } from '@/ui/components/effect-preview'
 import { KeyMap } from '@/ui/components/key-map'
 import { KeyTools, type Tool } from '@/ui/components/key-tools'
 import { Pane } from '@/ui/components/pane'
@@ -26,7 +27,6 @@ import { SendButton } from '@/ui/components/send-button'
 import type { KeyColorsDraft } from '@/ui/hooks/use-key-colors'
 import type { Lighting, LightingMode } from '@/ui/hooks/use-lighting'
 import type { Session } from '@/ui/hooks/use-session'
-import { previewColors } from '@/ui/lib/preview'
 import { resultMessage } from '@/ui/lib/result-message'
 import { cn } from '@/ui/lib/utils'
 
@@ -201,17 +201,7 @@ export function LightingPane({
         <ColorPicker value={lighting.color} onChange={lighting.setColor} />
       </div>
 
-      {perKey ? (
-        <KeyMap colors={keys.colors} onPaint={onPaint} className="w-full min-w-0" />
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          <KeyMap colors={previewColors(choice)} label={`Preview: ${describeChoice(choice)}`} className="w-full min-w-0" />
-          <p className="text-xs text-muted-foreground">
-            preview of {describeChoice(choice)}
-            {choice.effect.speed && ', which moves on the board'}
-          </p>
-        </div>
-      )}
+      {perKey ? <KeyMap colors={keys.colors} onPaint={onPaint} className="w-full min-w-0" /> : <EffectPreview choice={choice} />}
     </Pane>
   )
 }

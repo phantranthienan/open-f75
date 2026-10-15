@@ -7,7 +7,8 @@ What it does today:
 - connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
 - reads the board's lighting, so the controls start from what the board shows
 - sets any of the 15 built-in effects AULA offers on the F75 (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
-- paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect. The same map previews a whole-board effect.
+- paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect.
+- previews each whole-board effect on the same map, animated the way AULA's own app animates it (ported from its driver); Reaction, Flash away and Ripples shining react to what you type
 - saves the lighting, key colours included, as named profiles in the browser, with JSON export and import
 - backs up the board's settings page, colour table and per-key colours as JSON
 - shows every frame as hex in a packet log. Dry run is on whenever the page loads.
@@ -322,6 +323,7 @@ src/
       use-session.ts       wires transport, guard, keyboard and log for the UI
       use-lighting.ts      the lighting being edited, loaded from each read of the board
       use-key-colors.ts    the per-key colours being painted, loaded from the board
+      use-effect-animation.ts  plays an effect's animation on the map; key presses; reduced motion
       use-stored-list.ts   a list kept in localStorage, checked item by item as it loads
       use-profiles.ts      named profiles, on use-stored-list
       use-saved-colors.ts  saved colours, on use-stored-list
@@ -334,7 +336,8 @@ src/
       key-tools.tsx        Per-key mode: Paint, Erase, Fill all, Clear all, Board's colours
       color-picker.tsx     wheel, swatch, hex field and saved colours
       color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
-      key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints, or a still preview
+      key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints, or the effect preview
+      effect-preview.tsx   Effect mode's map: the animation playing, its caption, clicks on keys
       send-button.tsx      the amber Dry run / Send button
       backup-pane.tsx      Back up config, downloads the JSON
       profiles-pane.tsx    save, load, delete, export and import profiles
@@ -346,14 +349,19 @@ src/
       color.ts             HSV <-> RGB for the wheel
       utils.ts             cn(), the class-name helper shadcn uses
       download.ts          offers a file download (backup, profiles)
-      preview.ts           roughly what a whole-board effect shows, as key colours for the map
+      preview.ts           brightness for the map, and the still picture of an effect (reduced motion)
+      key-codes.ts         KeyboardEvent.code for each F75 key, for the reactive previews
+      animations/          AULA's effect previews, ported: one file per effect, index.ts maps effects to them
+        types.ts           the interface: a state machine stepped on the driver's timer period
+        driver.ts          shared pieces of the driver's engine: speed, alpha, colours, fades, rows, demo presses
+        palette-cycle.ts   the engine six effects share: units of keys looping through a palette
       result-message.ts    the status line after a write: no-op, dry run, or saved and read back
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
 scripts/rea-bridge.py      keeps one REA/Ghidra session open for static analysis of AULA's binaries
 scripts/ghidra/            ExportAll.java: Ghidra headless export (strings, imports, all decompiled C)
 scripts/pe-vtable.py       finds a C++ class's vtable in a Windows binary through its RTTI
-docs/reverse-engineering/  the plan, and the report on AULA's decompiled F75 driver
+docs/reverse-engineering/  the plan, the report on AULA's decompiled F75 driver, and previews/: one spec per effect preview
 references/                the reference projects, as git submodules
 index.html                 the page, plus the small script that applies the saved theme before paint
 vite.config.ts             React, Tailwind, the '@' alias and the raw-send check
@@ -371,7 +379,7 @@ One screen, laid out like a terminal dashboard:
 - **Top bar:** the name and a **source** link to this repository on GitHub, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
 - **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). The board shows one effect at a time, so the pane has two modes, **Effect** and **Per-key**, and opens in the one the board shows. Switching sends nothing.
-  - **Effect:** the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. The key map below previews the choice: the colour, dimmed by the brightness, or a rainbow for an effect that picks its own colours. It's a still picture; animated effects move on the board. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
+  - **Effect:** the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. The key map below plays the choice as AULA's app previews it, in your colour (or colourful) and dimmed by the brightness; the speed setting paces it. The animations are ported from AULA's driver ([report §21](docs/reverse-engineering/report.md#21-effect-previews)), so the board itself may differ in detail. Reaction, Flash away and Ripples shining light up from the keys you press while the page has focus (not while you type in a field) or click on the map, and press keys by themselves when nobody types. When the system asks for reduced motion, the map shows a still picture instead. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
   - **Per-key:** **Paint** or **Erase**, **Fill all**, **Clear all** and **Board's colours** (back to what the board stores), and the key map to paint on: click a key, press and drag across keys, or focus a key and press Enter. Each key's name and colour is its accessible name. The map is the F75 in its US (ANSI) layout, knob included. AULA's driver only ships a French (ISO) drawing, so the map keeps its geometry and LED numbers and takes the ANSI keys from OpenRGB's F75 layout ([report §12](docs/reverse-engineering/report.md#12-keys-leds-and-the-key-matrix)).
   - Both modes share the wheel, swatch, hex field and saved colours: the effect's colour in one, the paint colour in the other. Pinned at the bottom, a line saying what Send will write, and one button: **Dry run** / **Send to keyboard** for an effect, **Dry run key colours** / **Send key colours** for the keys, then what it did. It's amber while dry run is on. Sending an effect while the board shows your key colours switches the board back to that effect; the key colours stay stored for the next per-key Send.
 - **backup:** **Back up config**. It only reads.
@@ -418,6 +426,9 @@ test/
   packet-log/        following new entries, clearing, the newer-Chrome scroll regression
   color-picker/      the wheel (pointer and keyboard), saved colours in localStorage
   theme/             default, switching, reload, the pre-paint script, blocked storage
+  top-bar/           the source link
+  effect-preview/    the animated preview on a fake clock: Breathing, Rainbow wheel, a key press
+                     and a click for Reaction, typing in a field, the idle demo, every effect, reduced motion
 ```
 
 The fake board can be set up per test (`openWithBoard(page, { ... })`):

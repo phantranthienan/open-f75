@@ -88,25 +88,30 @@ const KeyCap = memo(function KeyCap({ k, hex, onPaint }: { k: Key; hex: string |
 /**
  * The F75 in its US layout (keys.ts), one shape per key in its colour, and the knob.
  * With `onPaint`, click a key to paint it, or press and drag across keys;
- * Enter or Space paints the focused key. Without it, the map is a still
- * picture named by `label`.
+ * Enter or Space paints the focused key. Without it, the map is a picture
+ * named by `label` (the effect preview), and `onPress`, if given, hears clicks
+ * on its keys.
  */
 export function KeyMap({
   colors,
   onPaint,
+  onPress,
   label,
   className,
 }: {
   colors: KeyHexColors
   onPaint?: (key: Key) => void
+  onPress?: (key: Key) => void
   label?: string
   className?: string
 }) {
   if (!onPaint) {
     return (
-      <svg viewBox={KEYS_VIEW_BOX} role="img" aria-label={label} className={cn('select-none', className)}>
+      <svg viewBox={KEYS_VIEW_BOX} role="img" aria-label={label} className={cn('select-none', onPress && 'cursor-pointer', className)}>
         {F75_KEYS.map((k) => (
-          <KeyShape key={k.led} k={k} hex={colors.get(k.led)} />
+          <g key={k.led} data-key={k.name} onPointerDown={onPress && (() => onPress(k))}>
+            <KeyShape k={k} hex={colors.get(k.led)} />
+          </g>
         ))}
         <Knob />
       </svg>
