@@ -127,6 +127,18 @@ test.describe('lighting', () => {
     expect(readBack - settingsWrite).toBeGreaterThanOrEqual(500)
   })
 
+  test('Effect mode previews the choice on the key map, which it does not paint', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
+    await pickColor(page, '#00ff00')
+    await expect(page.getByRole('img', { name: 'Preview: Fixed on in #00ff00' })).toBeVisible()
+    await expect(page.getByText('preview of Fixed on in #00ff00', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Esc: / })).toHaveCount(0)
+
+    await selectEffect(page, 'Breathing')
+    await expect(page.getByText(/^preview of Breathing.*, which moves on the board$/)).toBeVisible()
+  })
+
   test('off writes the effect byte only', async ({ page }) => {
     await live(page)
     await selectEffect(page, 'Off')

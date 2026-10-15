@@ -49,7 +49,7 @@ export function ProfilesPane({ lighting, keys, className }: { lighting: Lighting
   function onLoad(p: Profile) {
     lighting.loadControls(p)
     keys.replace(profileKeys(p))
-    setStatus(`Loaded "${p.name}" into the controls. Send from the lighting or keys pane to put it on the board.`)
+    setStatus(`Loaded "${p.name}" into the lighting controls. Send puts it on the board.`)
   }
 
   async function onImport(file: File | undefined) {

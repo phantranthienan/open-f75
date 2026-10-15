@@ -1,18 +1,24 @@
 /**
- * The F75's keys as AULA's driver draws them: each key's rectangle in the
- * driver's keyboard picture (679 x 304 px) and its LED index. Pure data, from
- * the [KEY] section of AULA's F75 profile [KBINI]; the ISO Enter outline is its
- * UnrectKey= line. It is the French (ISO) layout, the only F75 profile AULA
- * ships, so it has an ISO <> key.
+ * The F75's keys in the US (ANSI) layout, as the owner's board has them: each
+ * key's rectangle in the coordinates of AULA's keyboard picture (679 x 304 px)
+ * and its LED index. Pure data.
+ *
+ * AULA ships one F75 profile, the French (ISO) one [KBINI]; its rectangles and
+ * LED indices are kept for every key the two layouts share. The ANSI keys are
+ * reshaped after a photo of the board, with OpenRGB's AULA F75 layout for their
+ * LED indices [ORGB]: \ is 80 at the end of the Q row, Enter is 81 on one row,
+ * left Shift is wide, and after the space bar come Fn (53) and right Ctrl (59).
+ * The ISO keys 75 (#) and 76 (<>) don't exist.
  *
  * The LED index is column * 6 + row, row 0 being the F-key row, and is where a
  * key's colour goes in the per-key colours (per-key.ts) and the direct LED
- * frame. The knob (index 84) has no rectangle; the driver does not draw it.
+ * frame. The knob (index 84) is drawn but has no light (KNOB).
  *
  * Sources:
  *   [KBINI] references/AulaSofwareLinux/assets/devices/f75-fr/device.ini, [KEY] K1..K82
- *           (x1, y1, x2, y2, type, code, modifier, index) and [OPT] UnrectKey;
- *           docs/reverse-engineering/report.md §12
+ *           (x1, y1, x2, y2, type, code, modifier, index); docs/reverse-engineering/report.md §12
+ *   [ORGB]  references/OpenRGB/Controllers/SinowealthController/SinowealthKeyboard10cController/
+ *           SinowealthKeyboard10cDevices.cpp, aula_f75_layout (identity 0xCD)
  */
 
 export interface Key {
@@ -25,8 +31,6 @@ export interface Key {
   h: number
   /** What is printed on the key; shorter than the name for wide names. */
   label: string
-  /** A non-rectangular outline (ISO Enter) as SVG points; the rectangle is its bounding box. */
-  outline?: string
 }
 
 const key = (name: string, led: number, x: number, y: number, w: number, h: number, label = name): Key => ({
@@ -38,9 +42,6 @@ const key = (name: string, led: number, x: number, y: number, w: number, h: numb
   h,
   label,
 })
-
-/** UnrectKey=81,566,126,566,155,576,155,576,194,611,194,611,126,566,126 */
-const ISO_ENTER = '566,126 566,155 576,155 576,194 611,194 611,126'
 
 /** In rows from the top, left to right. */
 export const F75_KEYS: readonly Key[] = [
@@ -85,7 +86,7 @@ export const F75_KEYS: readonly Key[] = [
   key('P', 62, 447, 128, 26, 28),
   key('[', 68, 487, 128, 26, 28),
   key(']', 74, 527, 127, 26, 28),
-  { ...key('Enter', 81, 566, 126, 45, 68), outline: ISO_ENTER },
+  key('\\', 80, 566, 127, 45, 28),
   key('PgUp', 86, 627, 127, 26, 28),
   key('CapsLock', 3, 28, 167, 56, 28, 'Caps'),
   key('A', 9, 98, 168, 26, 28),
@@ -99,10 +100,9 @@ export const F75_KEYS: readonly Key[] = [
   key('L', 57, 417, 168, 26, 28),
   key(';', 63, 457, 168, 26, 28),
   key("'", 69, 496, 168, 26, 28),
-  key('\\', 75, 536, 167, 26, 28),
+  key('Enter', 81, 536, 167, 75, 28),
   key('PgDn', 87, 627, 167, 26, 28),
-  key('LShift', 4, 27, 207, 38, 28, 'Shift'),
-  key('ISO <>', 76, 77, 207, 26, 28, '<>'),
+  key('LShift', 4, 27, 207, 76, 28, 'Shift'),
   key('Z', 10, 117, 207, 26, 28),
   key('X', 16, 158, 207, 26, 28),
   key('C', 22, 197, 207, 26, 28),
@@ -120,12 +120,15 @@ export const F75_KEYS: readonly Key[] = [
   key('LWin', 11, 77, 247, 36, 28, 'Win'),
   key('LAlt', 17, 128, 247, 36, 28, 'Alt'),
   key('Space', 35, 176, 248, 236, 28, ''),
-  key('RAlt', 53, 427, 248, 36, 28, 'Alt'),
-  key('Fn', 59, 477, 247, 36, 28),
+  key('Fn', 53, 427, 248, 36, 28),
+  key('RCtrl', 59, 477, 247, 36, 28, 'Ctrl'),
   key('Left', 77, 547, 247, 26, 28, '←'),
   key('Down', 83, 587, 247, 26, 28, '↓'),
   key('Right', 89, 627, 247, 26, 28, '→'),
 ]
+
+/** The knob above Delete, in the same coordinates. It turns and clicks but has no light to paint. */
+export const KNOB = { x: 639, y: 48, r: 15 }
 
 /** The picture's area that holds keys, with a margin, for an SVG viewBox. */
 export const KEYS_VIEW_BOX = '17 23 646 263'

@@ -7,8 +7,8 @@ What it does today:
 - connects over the cable, checks the device and reads its identity, so it only ever talks to an F75
 - reads the board's lighting, so the controls start from what the board shows
 - sets any of the 15 built-in effects AULA offers on the F75 (or off) with its brightness, speed and colour, saved on the board. A colour is one of the seven firmware colours, any colour through the colour table, or "colourful".
-- paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect
-- saves what the lighting and keys panes hold as named profiles in the browser, with JSON export and import
+- paints each key its own colour on a map of the F75 (click, or drag across keys), saved on the board as the per-key effect. The same map previews a whole-board effect.
+- saves the lighting, key colours included, as named profiles in the browser, with JSON export and import
 - backs up the board's settings page, colour table and per-key colours as JSON
 - shows every frame as hex in a packet log. Dry run is on whenever the page loads.
 
@@ -136,7 +136,7 @@ With dry run off, the two `DRY` lines become `TX`. The app then reads both regio
 
 The code path behind that one click:
 
-1. `LightingPane.onSend` (`src/ui/components/lighting-pane.tsx`) calls `session.applyLighting(lighting.choice)`. The choice (effect, brightness, speed, colour) comes from `useLighting` (`src/ui/hooks/use-lighting.ts`), which starts from the board's last read.
+1. `LightingPane.onSend` (`src/ui/components/lighting-pane.tsx`) calls `session.applyLighting(lighting.choice)` in Effect mode (`session.applyPerKey` in Per-key mode). The choice (effect, brightness, speed, colour) comes from `useLighting` (`src/ui/hooks/use-lighting.ts`), which starts from the board's last read.
 2. `useSession` (`src/ui/hooks/use-session.ts`) runs it on the `Keyboard`, marks the app busy and turns any error into a message.
 3. `Keyboard.applyLighting` (`src/keyboard.ts`) reads the settings page and the colour table, then calls `planLighting`.
 4. `planLighting` (`src/protocol/lighting.ts`) returns the regions to write, in order, and the list of changed bytes. It does no I/O.
@@ -304,7 +304,7 @@ src/
     regions.ts             the three regions: read and write commands, length, how the log names them
     lighting.ts            planLighting and planPerKey: the read-modify-write plans
     per-key.ts             the per-key colours: three 126-byte planes by LED index
-    keys.ts                the F75's keys as AULA's driver draws them, with their LED indices
+    keys.ts                the F75's keys in the US (ANSI) layout, with their LED indices, and the knob
     ids.ts                 USB IDs and the 6-byte model identities
     bytes.ts               hex and RGB helpers
   allowlist.ts             the seven commands that may reach the board; inspect() and assertAllowed()
@@ -329,12 +329,13 @@ src/
     components/
       top-bar.tsx          title, connection light, theme switcher, dry-run switch, Connect
       device-pane.tsx      checks, identity, HID collections, Copy JSON
-      lighting-pane.tsx    effect, brightness, speed, colourful, the colour picker, Dry run / Send to keyboard
+      lighting-pane.tsx    Effect or Per-key mode, the colour picker, the key map, one Dry run / Send
+      effect-controls.tsx  Effect mode: the effect list, Colourful, brightness and speed
+      key-tools.tsx        Per-key mode: Paint, Erase, Fill all, Clear all, Board's colours
       color-picker.tsx     wheel, swatch, hex field and saved colours
       color-wheel.tsx      the hue/saturation wheel (pointer and keyboard)
-      keys-pane.tsx        the per-key painter: tools, Dry run / Send key colours
-      key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints
-      send-button.tsx      the amber Dry run / Send button both write panes use
+      key-map.tsx          the F75 as an SVG, one shape per key; click, drag or Enter paints, or a still preview
+      send-button.tsx      the amber Dry run / Send button
       backup-pane.tsx      Back up config, downloads the JSON
       profiles-pane.tsx    save, load, delete, export and import profiles
       log-pane.tsx         the packet log: follows new lines, copy, clear
@@ -345,6 +346,7 @@ src/
       color.ts             HSV <-> RGB for the wheel
       utils.ts             cn(), the class-name helper shadcn uses
       download.ts          offers a file download (backup, profiles)
+      preview.ts           roughly what a whole-board effect shows, as key colours for the map
       result-message.ts    the status line after a write: no-op, dry run, or saved and read back
 test/                      end-to-end tests, one folder per feature (see Tests)
 scripts/raw-sends.mjs      the rule that only the guard may send; used by vite.config.ts and lint
@@ -368,14 +370,16 @@ One screen, laid out like a terminal dashboard:
 
 - **Top bar:** the name and a **source** link to this repository on GitHub, the connection light (`connected · 258a:010c`), the theme switcher, the **Dry run** switch and **Connect** / **Disconnect**.
 - **device:** what the browser granted, the four checks with a tick, cross or dash, and why the app is holding back if it is. Below that, the HID collections table (usage page and usage, then each kind of report the board declares, with its ID and size) and **Copy JSON**.
-- **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). Then the **Effect** list (every whole-board effect; per-key belongs to the keys pane), **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. Below that the wheel, a swatch, the hex field and its RGB value, and your saved colours. Pinned at the bottom, a line saying what Send will write, and **Dry run** or **Send to keyboard** with what it did. That button is amber while dry run is on. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour. While the board shows your key colours, the pane stays on its own effect, and Send switches the board back to it.
+- **lighting:** the board's live effect in the border, and a **Read board** icon to read it again (after you changed something with the keyboard's own `Fn` keys, say). The board shows one effect at a time, so the pane has two modes, **Effect** and **Per-key**, and opens in the one the board shows. Switching sends nothing.
+  - **Effect:** the **Effect** list, **Brightness** (0–9) and **Speed** (0–4), greyed out for an effect that has no such control, and **Colourful** for an effect that can cycle colours. The key map below previews the choice: the colour, dimmed by the brightness, or a rainbow for an effect that picks its own colours. It's a still picture; animated effects move on the board. Picking another effect loads that effect's own brightness, speed and colourful setting from the board, and keeps your colour.
+  - **Per-key:** **Paint** or **Erase**, **Fill all**, **Clear all** and **Board's colours** (back to what the board stores), and the key map to paint on: click a key, press and drag across keys, or focus a key and press Enter. Each key's name and colour is its accessible name. The map is the F75 in its US (ANSI) layout, knob included. AULA's driver only ships a French (ISO) drawing, so the map keeps its geometry and LED numbers and takes the ANSI keys from OpenRGB's F75 layout ([report §12](docs/reverse-engineering/report.md#12-keys-leds-and-the-key-matrix)).
+  - Both modes share the wheel, swatch, hex field and saved colours: the effect's colour in one, the paint colour in the other. Pinned at the bottom, a line saying what Send will write, and one button: **Dry run** / **Send to keyboard** for an effect, **Dry run key colours** / **Send key colours** for the keys, then what it did. It's amber while dry run is on. Sending an effect while the board shows your key colours switches the board back to that effect; the key colours stay stored for the next per-key Send.
 - **backup:** **Back up config**. It only reads.
-- **profiles:** above the log. Type a name and **Save profile** to keep the effect, its brightness, speed and colourful setting, the colour and the key colours in this browser. Click a profile to load it into the controls (nothing is sent until you press Send), or × to delete it. **Export profiles** downloads them all as JSON; **Import profiles** adds the ones in such a file, replacing any with the same name. Imported and stored profiles are checked field by field, so a damaged file can't reach the controls.
-- **keys:** the per-key painter. **Paint** or **Erase**, **Fill all**, **Clear all** and **Board's colours** (back to what the board stores), the colour it paints with (the one picked in the lighting pane), and, pinned at the bottom, **Dry run key colours** or **Send key colours**, which also makes the per-key effect live. The board shows one effect at a time: the keys pane's Send switches it to your key colours, the lighting pane's Send switches it back to a whole-board effect, and the key colours stay stored in between. The map is AULA's drawing of the F75 (the ISO layout, the only one AULA ships for it): click a key, press and drag across keys, or focus a key and press Enter. Each key's name and colour is its accessible name.
+- **profiles:** above the log. Type a name and **Save profile** to keep the mode, the effect, its brightness, speed and colourful setting, the colour and the key colours in this browser. Click a profile to load it into the controls (nothing is sent until you press Send), or × to delete it. **Export profiles** downloads them all as JSON; **Import profiles** adds the ones in such a file, replacing any with the same name. Imported and stored profiles are checked field by field, so a damaged file can't reach the controls.
 - **packet log:** every frame and status line with a time stamp. `TX` sent, `RX` received, `DRY` held back by dry run, `BLOCK` refused by the allowlist, `ERR` and `INFO`. Frames longer than 48 bytes fold to a preview; click to see all of them. The log follows new lines while you're at the bottom and stays put when you scroll up. Use the icons for **Copy log** and **Clear log**.
 - **Status line:** `DRY RUN` or `LIVE`, the board's model, idle or working, and counts of tx, rx, dry and blocked frames.
 
-From 1024 px wide everything fits the window, and each pane scrolls on its own, with the Send buttons always in view: device and backup on the left, lighting in the middle, profiles and the packet log on the right, and the keys along the bottom. Narrower, the panes stack.
+From 1024 px wide everything fits the window, and each pane scrolls on its own, with the Send button always in view: device and backup on the left, the lighting wide in the middle, profiles and the packet log on the right. From 768 px the lighting spans the full width above the others; narrower, the panes stack.
 
 **The colour wheel** sets hue around the ring (red at the top, clockwise) and saturation from the centre (white) to the edge. Value is always full: the board has its own brightness, and dark colours only make the LEDs look off. Type a hex value for anything else. From the keyboard, focus the wheel: ←/→ change the hue by 5°, ↑/↓ change saturation by 5%, Shift triples the step, and Home goes to white.
 

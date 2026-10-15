@@ -1,4 +1,4 @@
-import { CONNECT_COMMANDS, F87_IDENTITY, commands, connect, connectF75, expect, openWithBoard, sent, test } from '@test/fixtures/app'
+import { CONNECT_COMMANDS, F87_IDENTITY, commands, connect, connectF75, expect, openWithBoard, sent, setMode, test } from '@test/fixtures/app'
 
 test.describe('connecting over WebHID', () => {
   test('identifies an F75 with one identity read, then reads its lighting', async ({ page }) => {
@@ -43,7 +43,9 @@ test.describe('connecting over WebHID', () => {
     expect(await sent(page)).toHaveLength(1)
     await expect(page.getByRole('button', { name: 'Back up config' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Dry run', exact: true })).toBeDisabled()
+    await setMode(page, 'Per-key')
     await expect(page.getByRole('button', { name: 'Dry run key colours' })).toBeDisabled()
+    expect(await sent(page)).toHaveLength(1)
   })
 
   test('sends nothing at all to a board with another product ID', async ({ page }) => {

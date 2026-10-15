@@ -1,6 +1,6 @@
 import { memo, type KeyboardEvent, type PointerEvent } from 'react'
 import { parseHexColor } from '@/protocol/bytes'
-import { F75_KEYS, KEYS_VIEW_BOX, type Key } from '@/protocol/keys'
+import { F75_KEYS, KEYS_VIEW_BOX, KNOB, type Key } from '@/protocol/keys'
 import type { KeyHexColors } from '@/ui/hooks/use-key-colors'
 import { cn } from '@/ui/lib/utils'
 
@@ -14,7 +14,48 @@ function labelColor(hex: string): string {
   return luminance > 0.25 ? '#11111b' : '#ffffff'
 }
 
-/** Memoised: while painting, only the key whose colour changed renders again. */
+/** One key's shape and label, in its colour (muted when off). */
+function KeyShape({ k, hex }: { k: Key; hex: string | undefined }) {
+  return (
+    <>
+      <rect
+        x={k.x}
+        y={k.y}
+        width={k.w}
+        height={k.h}
+        rx={3}
+        className="shape"
+        fill={hex ?? 'var(--muted)'}
+        stroke="var(--border)"
+        strokeWidth={1}
+      />
+      <text
+        x={k.x + k.w / 2}
+        y={k.y + k.h / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={8}
+        fill={hex ? labelColor(hex) : 'var(--muted-foreground)'}
+        className="pointer-events-none"
+      >
+        {k.label}
+      </text>
+    </>
+  )
+}
+
+/** The knob above Delete: drawn so the map looks like the board, but it has no light, so it never takes a colour. */
+function Knob() {
+  return (
+    <g aria-hidden="true">
+      <circle cx={KNOB.x} cy={KNOB.y} r={KNOB.r} fill="var(--muted)" stroke="var(--border)" strokeWidth={1} />
+      <circle cx={KNOB.x} cy={KNOB.y} r={KNOB.r - 4} fill="none" stroke="var(--border)" strokeWidth={1} />
+      <line x1={KNOB.x} y1={KNOB.y - KNOB.r + 4} x2={KNOB.x} y2={KNOB.y - KNOB.r + 9} stroke="var(--muted-foreground)" strokeWidth={1.5} />
+    </g>
+  )
+}
+
+/** A key you can paint. Memoised: while painting, only the key whose colour changed renders again. */
 const KeyCap = memo(function KeyCap({ k, hex, onPaint }: { k: Key; hex: string | undefined; onPaint: (key: Key) => void }) {
   const onPointerDown = (e: PointerEvent<SVGGElement>) => {
     // Touch captures the pointer to the first key; release it so a drag reaches the others.
@@ -26,10 +67,6 @@ const KeyCap = memo(function KeyCap({ k, hex, onPaint }: { k: Key; hex: string |
     e.preventDefault()
     onPaint(k)
   }
-  const shape = { className: 'shape', fill: hex ?? 'var(--muted)', stroke: 'var(--border)', strokeWidth: 1 }
-  // ISO Enter: centre the label in its upper, wider part.
-  const [cx, cy] = k.outline ? [k.x + k.w / 2, k.y + 15] : [k.x + k.w / 2, k.y + k.h / 2]
-
   return (
     <g
       role="button"
@@ -43,28 +80,38 @@ const KeyCap = memo(function KeyCap({ k, hex, onPaint }: { k: Key; hex: string |
       className="cursor-pointer outline-none [&:focus-visible>.shape]:stroke-ring [&:focus-visible>.shape]:stroke-2"
     >
       <title>{`${k.name}: ${hex ?? 'off'}`}</title>
-      {k.outline ? <polygon points={k.outline} {...shape} /> : <rect x={k.x} y={k.y} width={k.w} height={k.h} rx={3} {...shape} />}
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={8}
-        fill={hex ? labelColor(hex) : 'var(--muted-foreground)'}
-        className="pointer-events-none"
-      >
-        {k.label}
-      </text>
+      <KeyShape k={k} hex={hex} />
     </g>
   )
 })
 
 /**
- * The F75 as AULA's driver draws it, one shape per key in its stored colour.
- * Click a key to paint it, or press and drag across keys; Enter or Space
- * paints the focused key.
+ * The F75 in its US layout (keys.ts), one shape per key in its colour, and the knob.
+ * With `onPaint`, click a key to paint it, or press and drag across keys;
+ * Enter or Space paints the focused key. Without it, the map is a still
+ * picture named by `label`.
  */
-export function KeyMap({ colors, onPaint, className }: { colors: KeyHexColors; onPaint: (key: Key) => void; className?: string }) {
+export function KeyMap({
+  colors,
+  onPaint,
+  label,
+  className,
+}: {
+  colors: KeyHexColors
+  onPaint?: (key: Key) => void
+  label?: string
+  className?: string
+}) {
+  if (!onPaint) {
+    return (
+      <svg viewBox={KEYS_VIEW_BOX} role="img" aria-label={label} className={cn('select-none', className)}>
+        {F75_KEYS.map((k) => (
+          <KeyShape key={k.led} k={k} hex={colors.get(k.led)} />
+        ))}
+        <Knob />
+      </svg>
+    )
+  }
   return (
     <svg
       viewBox={KEYS_VIEW_BOX}
@@ -75,6 +122,7 @@ export function KeyMap({ colors, onPaint, className }: { colors: KeyHexColors; o
       {F75_KEYS.map((k) => (
         <KeyCap key={k.led} k={k} hex={colors.get(k.led)} onPaint={onPaint} />
       ))}
+      <Knob />
     </svg>
   )
 }

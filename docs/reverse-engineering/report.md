@@ -341,6 +341,15 @@ The F75's 82 keys, `index = key`. The index is `column × 6 + row`, where row 0 
 84 Knob   85 Del    86 PgUp   87 PgDn   88 End    89 Right
 ```
 
+**The US (ANSI) board.** That is the French (ISO) profile, the only F75 layout AULA ships. The owner's F75 is ANSI QWERTY: `\` at the end of the Q row, a one-row Enter, a wide left Shift, and Fn and right Ctrl after the space bar. OpenRGB's `aula_f75_layout` (for identity `0xCD`, `references/OpenRGB/.../SinowealthKeyboard10cDevices.cpp`) gives that layout's LED indices, and they agree with the profile for every shared key:
+
+- `\` is **80** (column 13, row 2, unused in ISO)
+- Enter stays **81**
+- **75** and **76** (ISO `#` and `<>`) don't exist
+- the two keys after the space bar are **Fn = 53** and **right Ctrl = 59**, where the profile has RAlt and Fn
+
+The app's key map (`src/protocol/keys.ts`) is this ANSI layout. *Confirmed against the photo of the board; the LED indices for `\` and right Ctrl are OpenRGB's, not yet painted on the owner's board.*
+
 **Matrix write** (`ApplySetting` + `FUN_0049b3d0`): `0x03`, parameter = layer 0–3 (layers in `LayerMask`, F75: 0, are skipped), 512 bytes = `MatrixLen` (128) little-endian 32-bit codes, at the key's matrix index. With `CRC=1` the last code is `0xA55A0000`, i.e. bytes 508–511 = `00 00 5A A5`.
 
 The layers are `[KEY]` (base) and the `[FNn]` sections, loaded by `FUN_00413830` three times. The F75 profile has `[FN1]`. *Layer numbering beyond "0 = base" is inferred.*
@@ -481,7 +490,7 @@ Every feature below needs new allowlist rules. Each rule must name its exact com
 
 ### Per-key painter
 
-- **Status (2026-10-14)**: built, the keys pane (`src/protocol/per-key.ts`, `planPerKey`), with allowlist rules for `0x06`/`0x86`, parameter 0, 378 bytes. Not yet tried on a board.
+- **Status (2026-10-15)**: built, Per-key mode of the lighting pane (`src/protocol/per-key.ts`, `planPerKey`), with allowlist rules for `0x06`/`0x86`, parameter 0, 378 bytes. Not yet tried on a board.
 - **Write**:
   - settings: `0x0a = 21`, `0x09 = 1`, `0x0b = 0x20`
   - then `0x06`, parameter 0, 378 bytes, planar R/G/B by LED index (§10)

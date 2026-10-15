@@ -7,11 +7,13 @@ import {
   connectF75,
   expect,
   keyOnMap as key,
+  modeButton,
   openWithBoard,
   pickColor,
   selectEffect,
   sendColor,
   setDryRun,
+  setMode,
   test,
   writtenPayload,
 } from '@test/fixtures/app'
@@ -21,14 +23,16 @@ async function saveProfile(page: Page, name: string) {
   await page.getByRole('button', { name: 'Save profile' }).click()
 }
 
-/** Breathing at brightness 3 in #123456, with Esc painted the same colour. */
+/** Breathing at brightness 3 in #123456, with Esc painted the same colour; saved in Effect mode. */
 async function makeEvening(page: Page) {
+  await setMode(page, 'Per-key')
+  await pickColor(page, '#123456')
+  await key(page, 'Esc').click()
+  await setMode(page, 'Effect')
   await selectEffect(page, 'Breathing')
   const colorful = page.getByRole('switch', { name: 'Colourful' })
   if (await colorful.isChecked()) await colorful.click() // a connected board stores Breathing as colourful
   await page.getByLabel('Brightness').fill('3')
-  await pickColor(page, '#123456')
-  await key(page, 'Esc').click()
   await saveProfile(page, 'evening')
   await expect(page.getByText('Saved "evening".')).toBeVisible()
 }
@@ -44,11 +48,26 @@ test.describe('profiles', () => {
     await expect(page.getByLabel('Effect')).toHaveValue('2')
     await expect(page.getByLabel('Brightness')).toHaveValue('3')
     await expect(page.getByLabel('Hex')).toHaveValue('#123456')
+    await setMode(page, 'Per-key')
     await expect(key(page, 'Esc')).toHaveAccessibleName('Esc: #123456')
 
     await page.getByRole('button', { name: 'Delete evening' }).click()
     await page.reload()
     await expect(page.getByText('No profiles yet.')).toBeVisible()
+  })
+
+  test('a profile saved in Per-key mode loads back into Per-key mode', async ({ page }) => {
+    await page.goto('/')
+    await setMode(page, 'Per-key')
+    await pickColor(page, '#00ff00')
+    await key(page, 'Esc').click()
+    await saveProfile(page, 'keys')
+    await expect(page.getByRole('button', { name: 'Load keys' })).toContainText('Per-key · 1 key')
+
+    await setMode(page, 'Effect')
+    await page.getByRole('button', { name: 'Load keys' }).click()
+    await expect(modeButton(page, 'Per-key')).toHaveAttribute('aria-pressed', 'true')
+    await expect(key(page, 'Esc')).toHaveAccessibleName('Esc: #00ff00')
   })
 
   test('export to a JSON file and import it again', async ({ page }, testInfo) => {

@@ -15,6 +15,7 @@ import {
   sendColor,
   sent,
   setDryRun,
+  setMode,
   test,
   writtenPayload,
 } from '@test/fixtures/app'
@@ -75,7 +76,8 @@ test.describe('static colour over WebHID', () => {
     await openWithBoard(page, { settings: perKey })
     await connectF75(page)
     await expect(page.getByText('board: Per-key')).toBeVisible()
-    await expect(page.getByLabel('Effect')).toHaveValue('1') // per-key is the keys pane's; the lighting pane edits Fixed on
+    await setMode(page, 'Effect') // the board's per-key effect opened Per-key mode
+    await expect(page.getByLabel('Effect')).toHaveValue('1')
     await setDryRun(page, false)
     await selectEffect(page, 'Fixed on')
     await pickColor(page, '#00ff00')

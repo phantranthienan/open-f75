@@ -52,6 +52,16 @@ export const READ = {
 /** The commands connectF75 sends: identity, then the board read. */
 export const CONNECT_COMMANDS = [0x82, ...READ.board]
 
+/** The lighting pane's mode switch: Effect for whole-board effects, Per-key for painting keys. Sends nothing. */
+export async function setMode(page: Page, mode: 'Effect' | 'Per-key') {
+  await page.getByRole('group', { name: 'Mode' }).getByRole('button', { name: mode, exact: true }).click()
+}
+
+/** The lighting pane's mode switch button for this mode, to check which one is on. */
+export function modeButton(page: Page, mode: 'Effect' | 'Per-key') {
+  return page.getByRole('group', { name: 'Mode' }).getByRole('button', { name: mode, exact: true })
+}
+
 export async function selectEffect(page: Page, name: string) {
   await page.getByLabel('Effect').selectOption({ label: name })
 }
@@ -82,12 +92,12 @@ export async function writtenPayload(page: Page, cmd: number, length: number): P
   return write ? payloadOf(write.data, length) : null
 }
 
-/** A key on the keys pane's map, by its name in AULA's profile ('Esc', 'Q', 'Space'...). */
+/** A key on the map in Per-key mode, by its name in AULA's profile ('Esc', 'Q', 'Space'...). */
 export function keyOnMap(page: Page, name: string) {
   return page.getByRole('button', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `) })
 }
 
-/** The keys pane's button, labelled "Dry run key colours" or "Send key colours". */
+/** Send in Per-key mode, labelled "Dry run key colours" or "Send key colours". */
 export async function sendKeyColors(page: Page) {
   await page.getByRole('button', { name: /^(Dry run|Send) key colours$/ }).click()
 }
@@ -106,7 +116,7 @@ export async function pickColor(page: Page, hex: string) {
   await page.getByLabel('Hex').fill(hex)
 }
 
-/** Clicks the colour card's button, labelled "Dry run" or "Send to keyboard". */
+/** Send in Effect mode, labelled "Dry run" or "Send to keyboard". */
 export async function sendColor(page: Page) {
   await page.getByRole('button', { name: /^(Dry run|Send to keyboard)$/ }).click()
 }

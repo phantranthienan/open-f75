@@ -1,5 +1,5 @@
 /**
- * Lighting profiles: what the lighting and keys panes hold, saved under a name
+ * Lighting profiles: what the lighting pane holds (mode, effect and key colours), saved under a name
  * in this browser and exported or imported as JSON. Framework-free.
  *
  * A profile only fills the controls; nothing is sent until the user presses

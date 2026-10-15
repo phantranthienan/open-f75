@@ -11,11 +11,13 @@ import {
   connectF75,
   expect,
   keyOnMap as key,
+  modeButton,
   openWithBoard,
   pickColor,
   sendColor,
   sendKeyColors,
   setDryRun,
+  setMode,
   test,
   writtenPayload,
 } from '@test/fixtures/app'
@@ -42,6 +44,7 @@ test.describe('per-key colours', () => {
     await openWithBoard(page)
     await connectF75(page)
     await setDryRun(page, false)
+    await setMode(page, 'Per-key')
 
     await pickColor(page, '#ff0000')
     await key(page, 'Esc').click()
@@ -49,7 +52,7 @@ test.describe('per-key colours', () => {
     await pickColor(page, '#0000ff')
     await key(page, 'Space').click()
     await expect(key(page, 'W')).toHaveAccessibleName('W: #ff0000')
-    await expect(page.getByText('5 of 81 lit')).toBeVisible()
+    await expect(page.getByText('5 of 80 lit')).toBeVisible()
 
     await sendKeyColors(page)
     await expect(page.getByText('Saved the per-key effect with 5 key(s) lit (per-key colours + settings page) and read it back.')).toBeVisible()
@@ -68,38 +71,59 @@ test.describe('per-key colours', () => {
     await expect(page.getByText('board: Per-key')).toBeVisible()
   })
 
+  test('the map is the US layout: \\ on the Q row, one-row Enter, Fn and Ctrl after the space bar', async ({ page }) => {
+    await openWithBoard(page)
+    await connectF75(page)
+    await setDryRun(page, false)
+    await setMode(page, 'Per-key')
+    await expect(page.getByRole('button', { name: /^ISO/ })).toHaveCount(0)
+    await expect(page.getByText('0 of 80 lit')).toBeVisible()
+
+    await pickColor(page, '#ff0000')
+    for (const name of ['\\', 'Enter', 'Fn', 'RCtrl']) await key(page, name).click()
+    await sendKeyColors(page)
+
+    await expect(page.getByText(/^Saved the per-key effect with 4 key\(s\) lit/)).toBeVisible()
+    const colors = (await writtenPayload(page, WRITE.perKey, 378))!
+    // OpenRGB's AULA F75 layout: \ 80, Enter 81, Fn 53, right Ctrl 59.
+    expect(colors.slice(R, R + 126).flatMap((v, led) => (v ? [led] : []))).toEqual([53, 59, 80, 81])
+  })
+
   test('starts from the colours stored on the board', async ({ page }) => {
     const perKey = [...BLANK_PER_KEY]
     perKey[G + LED.Esc] = 0xff
     await openWithBoard(page, { perKey })
     await connectF75(page)
+    await setMode(page, 'Per-key')
 
     await expect(key(page, 'Esc')).toHaveAccessibleName('Esc: #00ff00')
     await expect(key(page, 'Q')).toHaveAccessibleName('Q: off')
-    await expect(page.getByText('1 of 81 lit')).toBeVisible()
+    await expect(page.getByText('1 of 80 lit')).toBeVisible()
   })
 
   test('fill, erase, clear and back to the board', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
+    await setMode(page, 'Per-key')
     await pickColor(page, '#00ff00')
 
     await page.getByRole('button', { name: 'Fill all' }).click()
-    await expect(page.getByText('81 of 81 lit')).toBeVisible()
+    await expect(page.getByText('80 of 80 lit')).toBeVisible()
     await page.getByRole('button', { name: 'Erase' }).click()
     await key(page, 'Esc').click()
     await expect(key(page, 'Esc')).toHaveAccessibleName('Esc: off')
-    await expect(page.getByText('80 of 81 lit')).toBeVisible()
+    await expect(page.getByText('79 of 80 lit')).toBeVisible()
     await page.getByRole('button', { name: 'Clear all' }).click()
-    await expect(page.getByText('0 of 81 lit')).toBeVisible()
+    await expect(page.getByText('0 of 80 lit')).toBeVisible()
     await page.getByRole('button', { name: 'Fill all' }).click()
     await page.getByRole('button', { name: "Board's colours" }).click()
-    await expect(page.getByText('0 of 81 lit')).toBeVisible()
+    await expect(page.getByText('0 of 80 lit')).toBeVisible()
   })
 
   test('a key paints from the keyboard too', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
+    await setMode(page, 'Per-key')
     await pickColor(page, '#123456')
     await key(page, 'Esc').focus()
     await page.keyboard.press('Enter')
@@ -109,6 +133,7 @@ test.describe('per-key colours', () => {
   test('a dry run of key colours writes nothing', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
+    await setMode(page, 'Per-key')
     await key(page, 'Esc').click()
     await sendKeyColors(page)
 
@@ -117,18 +142,33 @@ test.describe('per-key colours', () => {
     expect((await boardState(page)).perKey).toEqual(BOARD.perKey)
   })
 
-  test('after the key colours, the lighting pane still switches the whole board to a colour', async ({ page }) => {
+  test('a board on the per-key effect opens Per-key mode, and switching mode sends nothing', async ({ page }) => {
+    const settings = [...BOARD.settings]
+    settings[0x09] = 1
+    settings[0x0a] = 21
+    await openWithBoard(page, { settings })
+    await connectF75(page)
+    await expect(modeButton(page, 'Per-key')).toHaveAttribute('aria-pressed', 'true')
+
+    await setMode(page, 'Effect')
+    await expect(page.getByLabel('Effect')).toHaveValue('1') // per-key isn't in the list; Effect mode edits Fixed on
+    await expect(page.getByLabel('Effect').getByRole('option', { name: 'Per-key' })).toHaveCount(0)
+    await setMode(page, 'Per-key')
+    expect(await commands(page)).toEqual(CONNECT_COMMANDS)
+  })
+
+  test('after the key colours, Effect mode switches the whole board back to a colour', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
     await setDryRun(page, false)
+    await setMode(page, 'Per-key')
     await pickColor(page, '#ff0000')
     await key(page, 'Esc').click()
+    await expect(page.getByText('Send switches the board from Fixed on to your key colours · per-key colours + settings page')).toBeVisible()
     await sendKeyColors(page)
     await expect(page.getByText('board: Per-key')).toBeVisible()
 
-    // Per-key isn't one of the lighting pane's effects: it stays on Fixed on.
-    await expect(page.getByLabel('Effect')).toHaveValue('1')
-    await expect(page.getByLabel('Effect').getByRole('option', { name: 'Per-key' })).toHaveCount(0)
+    await setMode(page, 'Effect')
     await pickColor(page, '#00ff00')
     await expect(page.getByText('Send switches the board from your key colours to Fixed on · firmware colour, settings page only')).toBeVisible()
     await sendColor(page)
@@ -138,18 +178,21 @@ test.describe('per-key colours', () => {
     expect([settings[0x09], settings[0x0a]]).toEqual([0, 1])
     expect(perKey[R + LED.Esc]).toBe(255) // the key colours stay stored for the next per-key Send
     await expect(page.getByText('board: Fixed on')).toBeVisible()
-    await expect(page.getByText('Send switches the board from Fixed on to these key colours.')).toBeVisible()
+    await expect(modeButton(page, 'Effect')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  test('sending a lighting change keeps the painting in progress', async ({ page }) => {
+  test('sending a whole-board effect keeps the painting in progress', async ({ page }) => {
     await openWithBoard(page)
     await connectF75(page)
     await setDryRun(page, false)
+    await setMode(page, 'Per-key')
     await pickColor(page, '#00ff00')
     await key(page, 'Esc').click()
-    await sendColor(page) // Fixed on in green, from the lighting pane
+    await setMode(page, 'Effect')
+    await sendColor(page) // Fixed on in green
 
     await expect(page.getByText('Saved Fixed on in #00ff00')).toBeVisible()
+    await setMode(page, 'Per-key')
     await expect(key(page, 'Esc')).toHaveAccessibleName('Esc: #00ff00')
   })
 })
